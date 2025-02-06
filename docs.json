@@ -21,7 +21,7 @@
             ]
           },
           {
-            "group": "Essentials",
+            "group": "Backtesting",
             "pages": [
               "essentials/markdown",
               "essentials/code",
@@ -64,8 +64,8 @@
     }
   },
   "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "light": "logolimex_dark.png",
+    "dark": "logolimex_dark.png"
   },
   "navbar": {
     "links": [
