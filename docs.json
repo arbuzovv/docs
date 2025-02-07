@@ -31,7 +31,7 @@
         ]
       },
       {
-        "tab": "Standalone",
+        "tab": "DataHub",
         "groups": [
           {
             "group": "API Documentation",
@@ -48,7 +48,19 @@
             ]
           }
         ]
-      }
+      },
+      {
+        "tab": "Standalone",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          }
+        ]
+      },
     ],
     "global": {
       "anchors": [
