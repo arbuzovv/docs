@@ -7,11 +7,11 @@
   },
   "servers": [
     {
-      "url": "/v1"
+      "url": "http://hub.limex.com/v1/"
     }
   ],
   "paths": {
-    "/instruments/": {
+    "/instruments": {
       "get": {
         "tags": ["Market Data"],
         "summary": "Get Instruments",
@@ -60,7 +60,7 @@
         }
       }
     },
-    "/constituents/": {
+    "/constituents": {
       "get": {
         "tags": ["Market Data"],
         "summary": "Get Index",
