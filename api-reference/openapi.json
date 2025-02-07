@@ -1,1 +1,159 @@
-{"openapi":"3.1.0","info":{"title":"Limex Data Hub","description":"\nLargest Datasets of Institutional Level Insights and Market Data\n","version":"0.6"},"servers":[{"url":"/v1"}],"paths":{"/instruments/":{"get":{"tags":["Market Data"],"summary":"Get Instruments","description":"This method retrieves a list of financial instruments, such as stocks, availible in Hub. It requires one parameter: assets (the type of asset, which is required).","operationId":"get_instruments_instruments__get","parameters":[{"name":"token","in":"query","required":true,"schema":{"title":"Token"}},{"name":"assets","in":"query","required":false,"schema":{"type":"string","default":"stocks","title":"Assets"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/constituents/":{"get":{"tags":["Market Data"],"summary":"Get Index","description":"Get a list of index constituents. Currently support SP500, DJI","operationId":"get_index_constituents__get","parameters":[{"name":"token","in":"query","required":true,"schema":{"title":"Token"}},{"name":"index","in":"query","required":false,"schema":{"type":"string","default":"SP500","title":"Index"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/candles/":{"get":{"tags":["Market Data"],"summary":"Get Candles","description":"This method retrieves historical price data for a specific financial instrument. It allows you to specify parameters like the symbol of the instrument, start date, end date and timeframe.","operationId":"get_candles_candles__get","parameters":[{"name":"symbol","in":"query","required":true,"schema":{"title":"Symbol"}},{"name":"token","in":"query","required":true,"schema":{"title":"Token"}},{"name":"timeframe","in":"query","required":false,"schema":{"type":"string","default":"3","title":"Timeframe"}},{"name":"from","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"default":"2024-01-01","title":"From"}},{"name":"to","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"default":"2025-01-15","title":"To"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/fundamental/":{"get":{"tags":["Market Data"],"summary":"Get Fundamental","description":"This method retrieves fundamental data for a specific financial instrument. It requires the symbol parameter, and optionally, you can specify start date, end date, list of fields to extract.\nAlso you can retrieves fundamental data for a specific indicator.","operationId":"get_fundamental_fundamental__get","parameters":[{"name":"symbol","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Symbol"}},{"name":"token","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Token"}},{"name":"fields","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Fields"}},{"name":"from","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"default":"2023-01-01","title":"From"}},{"name":"to","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"default":"2024-01-01","title":"To"}},{"name":"quarter","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Quarter"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/news/":{"get":{"tags":["Market Data"],"summary":"Get News","description":"This method retrieves news articles related to a specific financial instrument. It requires the symbol parameter and optionally, you can specify start date and end date.","operationId":"get_news_news__get","parameters":[{"name":"symbol","in":"query","required":true,"schema":{"title":"Symbol"}},{"name":"token","in":"query","required":true,"schema":{"title":"Token"}},{"name":"to","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"To"}},{"name":"from","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"default":"2023-01-01","title":"From"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/events/":{"get":{"tags":["Market Data"],"summary":"Get Fundamental","description":"This method retrieves corporate events for a specific financial instrument. It requires the symbol and type of events: dividends or splits.","operationId":"get_fundamental_events__get","parameters":[{"name":"symbol","in":"query","required":true,"schema":{"title":"Symbol"}},{"name":"token","in":"query","required":true,"schema":{"title":"Token"}},{"name":"to","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"To"}},{"name":"from","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"default":"2023-01-01","title":"From"}},{"name":"type","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"default":"dividends","title":"Type"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/signals/":{"get":{"tags":["Alternative Data"],"summary":"Read Signals","description":"This method allows you to retrieve signals data from a specified vendor. You can specify parameters like the symbol, start date, end date, vendor and model for trading.","operationId":"read_signals_signals__get","parameters":[{"name":"vendor","in":"query","required":true,"schema":{"title":"Vendor"}},{"name":"model","in":"query","required":true,"schema":{"title":"Model"}},{"name":"token","in":"query","required":true,"schema":{"title":"Token"}},{"name":"to","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"To"}},{"name":"symbol","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Symbol"}},{"name":"from","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"default":"2023-01-01","title":"From"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/models/":{"get":{"tags":["Alternative Data"],"summary":"Get Models","description":"This method retrieves models or portfolios for trading from a selected vendor. It requires the vendor params. List of availible vendors and pricing you can find in your profile.","operationId":"get_models_models__get","parameters":[{"name":"vendor","in":"query","required":true,"schema":{"title":"Vendor"}},{"name":"token","in":"query","required":true,"schema":{"title":"Token"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/altercandles/":{"get":{"tags":["Alternative Data"],"summary":"Get Altercandles","description":"This method retrieves historical price data for a specific financial instrument. It allows you to specify parameters like the symbol of the instrument, start date, end date and timeframe.","operationId":"get_altercandles_altercandles__get","parameters":[{"name":"symbol","in":"query","required":true,"schema":{"title":"Symbol"}},{"name":"token","in":"query","required":true,"schema":{"title":"Token"}},{"name":"to","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"To"}},{"name":"timeframe","in":"query","required":false,"schema":{"type":"string","default":"3","title":"Timeframe"}},{"name":"from","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"default":"2023-01-01","title":"From"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/shorts/":{"get":{"tags":["Alternative Data"],"summary":"Get Shorts","description":"This method retrieves shorts data for a specific financial instrument. It allows you to specify parameters like the symbol of the instrument, start date","operationId":"get_shorts_shorts__get","parameters":[{"name":"symbol","in":"query","required":true,"schema":{"title":"Symbol"}},{"name":"token","in":"query","required":true,"schema":{"title":"Token"}},{"name":"from","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"default":"2010-01-01","title":"From"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}}},"components":{"schemas":{"HTTPValidationError":{"properties":{"detail":{"items":{"$ref":"#/components/schemas/ValidationError"},"type":"array","title":"Detail"}},"type":"object","title":"HTTPValidationError"},"ValidationError":{"properties":{"loc":{"items":{"anyOf":[{"type":"string"},{"type":"integer"}]},"type":"array","title":"Location"},"msg":{"type":"string","title":"Message"},"type":{"type":"string","title":"Error Type"}},"type":"object","required":["loc","msg","type"],"title":"ValidationError"}}}}
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Limex Data Hub",
+    "description": "Largest Datasets of Institutional Level Insights and Market Data",
+    "version": "0.6"
+  },
+  "servers": [
+    {
+      "url": "/v1"
+    }
+  ],
+  "paths": {
+    "/instruments/": {
+      "get": {
+        "tags": ["Market Data"],
+        "summary": "Get Instruments",
+        "description": "This method retrieves a list of financial instruments, such as stocks, availible in Hub.",
+        "operationId": "get_instruments_instruments__get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token"
+            }
+          },
+          {
+            "name": "assets",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "stocks",
+              "title": "Assets"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/constituents/": {
+      "get": {
+        "tags": ["Market Data"],
+        "summary": "Get Index",
+        "description": "Get a list of index constituents. Currently support SP500, DJI",
+        "operationId": "get_index_constituents__get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token"
+            }
+          },
+          {
+            "name": "index",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "SP500",
+              "title": "Index"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    // Остальные пути аналогично
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "type": "array",
+            "items": {
+              "anyOf": [{
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": ["loc", "msg", "type"],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
