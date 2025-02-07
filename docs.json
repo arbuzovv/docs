@@ -68,6 +68,12 @@
           "anchor": "Documentation",
           "href": "https://limex.mintlify.app/introduction",
           "icon": "book-open-cover"
+        },
+        {
+          "name": "API Reference",
+          "openapi": "https://hub.limex.com/v1/openapi.json",
+          "url": "api-reference",
+          "icon": "square-terminal"
         }
       ]
     }
