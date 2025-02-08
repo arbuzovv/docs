@@ -42,6 +42,10 @@
         ]
       }
     ],
+  "global": {
+      "anchors": [
+      ]
+    }
   },
   "logo": {
     "light": "logolimex_dark.png",
