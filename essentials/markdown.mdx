@@ -6,27 +6,27 @@ icon: "text-size"
 
 **Guidelines for Writing Prompts**
 
-1. **Be Specific**
+1. **Be Specific:**
 
     Clearly define the trading logic, including entry and exit conditions. Specify the type of assets or markets you're interested in.
 
-2. **Include Timeframes**
+2. **Include Timeframes:**
 
     Mention the desired timeframes for your strategy, whether it's intraday, daily, weekly, etc.
 
-3. **Define Indicators**
+3. **Define Indicators:**
 
     Specify any technical indicators or fundamental metrics you want to incorporate.
 
-4. **Clarify Objectives**
+4. **Clarify Objectives:**
 
     State your performance objectives, such as maximizing return, minimizing risk, or achieving a specific Sharpe ratio.
 
-5. **Add Constraints**
+5. **Add Constraints:**
 
     Include any constraints such as risk tolerance, position limits, or transaction costs.
 
-6. **Iterate and Refine**
+6. **Iterate and Refine:**
 
     Start with a simple prompt and gradually refine it based on the AI's output and your strategic goals.
 
@@ -42,7 +42,7 @@ icon: "text-size"
   exit the position when the 50-day SMA crosses below.
   ```
 
-  ```python Momentum strategy
+  ```typescript Momentum strategy
   Develop a momentum strategy for ETFs. 
   Identify ETFs with the top 10% highest relative strength over the past 6 months. 
   Enter positions in these ETFs and rebalance the portfolio monthly. 
@@ -54,7 +54,7 @@ icon: "text-size"
 **Example 2: strategies based on fundamental data**
 
 <CodeGroup>
-  ```javascript Earnings-Based Strategy
+  ```typescript Earnings-Based Strategy
   Design a strategy for futures trading based on earnings 
   announcements. Enter a position in futures contracts 
   if the company reports earnings that exceed analyst expectations 
@@ -66,5 +66,3 @@ icon: "text-size"
 <Tip>
   If you don't like result of strategy or if you have error while backtesting try to regenerate zipline engine code
 </Tip>
-
-<Latex>8 x (vk x H1 - H2) = (0,1)</Latex>
