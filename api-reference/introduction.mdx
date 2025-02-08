@@ -9,9 +9,7 @@ Ziplime extends the capabilities of the Zipline backtester by adding new functio
 
 ### **Data Ingestion for Bundles**:
 
-* Ziplime allows users to ingest data into bundles using an API key from Limex DataHub. This enables access to a wide range of financial datasets for backtesting. To obtain the necessary API key, visit 
-
-  [Limex DataHub](https://datahub.limex.com/)
+* Ziplime allows users to ingest data into bundles using an API key from Limex DataHub. This enables access to a wide range of financial datasets for backtesting. To obtain the necessary API key, visit [Limex DataHub](https://datahub.limex.com/)
 
 * After acquiring your key, set it as an environment variable:
 
@@ -27,11 +25,7 @@ poetry run python -m ziplime ingest -b limex_us_all_in --period day --start-date
 
 ### **Live Trading Execution**:
 
-* For live trading, you do not need an API key from Limex DataHub as it does not rely on data bundles. However, you must have a Lime account and configure your 
-
-  `credentials.json`
-
-   file with the necessary account information.
+* For live trading, you do not need an API key from Limex DataHub as it does not rely on data bundles. However, you must have a Lime account and configure your `credentials.json` file with the necessary account information
 
 * Save this file as an environment variable:
 
