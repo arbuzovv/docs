@@ -42,15 +42,6 @@
         ]
       }
     ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://limex.mintlify.app/introduction",
-          "icon": "book-open-cover"
-        }
-      ]
-    }
   },
   "logo": {
     "light": "logolimex_dark.png",
