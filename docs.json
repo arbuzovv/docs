@@ -74,6 +74,20 @@
             ]
           },
           {
+            "group": "Strategy Language",
+            "pages": [
+              "language/strategy-language/overview",
+              "language/strategy-language/algorithm-file",
+              "language/strategy-language/context-api",
+              "language/strategy-language/market-data",
+              "language/strategy-language/orders",
+              "language/strategy-language/portfolio-and-recording",
+              "language/strategy-language/scheduling-and-controls",
+              "language/strategy-language/pipelines",
+              "language/strategy-language/zipline-migration"
+            ]
+          },
+          {
             "group": "Migrating to Ziplime",
             "pages": [
               "language/migrating/from-metatrader",
