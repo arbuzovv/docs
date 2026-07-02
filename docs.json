@@ -1,10 +1,10 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "willow",
+  "theme": "maple",
   "name": "ZipLime docs",
   "colors": {
     "primary": "#CFFC3E",
-    "light": "#CFFC3E",
+    "light": "#87EAE6",
     "dark": "#8FBE1E"
   },
   "favicon": "/favicon.png",
