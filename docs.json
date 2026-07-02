@@ -1,42 +1,105 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
+  "theme": "maple",
   "name": "ZipLime docs",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#CFFC3E",
+    "light": "#87EAE6",
+    "dark": "#8FBE1E"
   },
-  "favicon": "/logo_lmx.png",
+  "favicon": "/favicon.png",
   "navigation": {
     "tabs": [
       {
-        "tab": "Web",
+        "tab": "ZipLime Guide",
         "groups": [
           {
             "group": "Get Started",
             "pages": [
-              "introduction",
-              "quickstart"
+              "guide/getting-started/overview",
+              "guide/getting-started/how-it-works",
+              "guide/getting-started/registration"
             ]
           },
           {
-            "group": "Backtesting",
+            "group": "Platform",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/settings"
+              "guide/platform/ai-agent-team",
+              "guide/platform/three-levels",
+              "guide/platform/product-features",
+              "guide/platform/real-trading"
+            ]
+          },
+          {
+            "group": "Product",
+            "pages": [
+              "guide/product/two-environments",
+              "guide/product/engine-and-technology",
+              "guide/product/infrastructure-and-security",
+              "guide/product/how-we-are-different"
+            ]
+          },
+          {
+            "group": "Plans & Events",
+            "pages": [
+              "guide/plans/pricing-and-registration"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "guide/resources/faq",
+              "guide/resources/glossary"
             ]
           }
         ]
       },
       {
-        "tab": "Standalone",
+        "tab": "Backtesting Language",
         "groups": [
           {
-            "group": "Get Started",
+            "group": "Introduction",
             "pages": [
-              "api-reference/introduction"
+              "language/introduction/engine-overview",
+              "language/introduction/under-the-hood"
+            ]
+          },
+          {
+            "group": "Writing Strategies",
+            "pages": [
+              "language/writing-strategies/three-levels",
+              "language/writing-strategies/timeframes-and-history",
+              "language/writing-strategies/costs-and-commissions"
+            ]
+          },
+          {
+            "group": "Strategy Language",
+            "pages": [
+              "language/strategy-language/overview",
+              "language/strategy-language/algorithm-file",
+              "language/strategy-language/context-api",
+              "language/strategy-language/market-data",
+              "language/strategy-language/orders",
+              "language/strategy-language/portfolio-and-recording",
+              "language/strategy-language/scheduling-and-controls",
+              "language/strategy-language/pipelines",
+              "language/strategy-language/zipline-migration"
+            ]
+          },
+          {
+            "group": "Migrating to Ziplime",
+            "pages": [
+              "language/migrating/from-metatrader",
+              "language/migrating/from-quik",
+              "language/migrating/from-tradingview",
+              "language/migrating/from-quantconnect",
+              "language/migrating/from-zipline-quantopian"
+            ]
+          },
+          {
+            "group": "Limitations",
+            "pages": [
+              "language/limitations/not-for-hft"
             ]
           }
         ]
@@ -48,8 +111,8 @@
     }
   },
   "logo": {
-    "light": "logolimex_dark.png",
-    "dark": "logo_limexxx.svg"
+    "light": "/logo/limex-logo-light.png",
+    "dark": "/logo/limex-logo-dark.png"
   },
   "navbar": {
     "links": [
@@ -70,5 +133,18 @@
       "github": "https://github.com/limex",
       "linkedin": "https://linkedin.com/company/limex"
     }
+  },
+  "background": {
+    "decoration": "grid",
+    "color": {
+      "light": "#FFFFFF",
+      "dark": "#0A0A0A"
+    }
+  },
+  "fonts": {
+    "family": "Archivo"
+  },
+  "appearance": {
+    "default": "dark"
   }
 }
