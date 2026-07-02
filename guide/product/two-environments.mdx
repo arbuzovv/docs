@@ -1,0 +1,20 @@
+---
+title: "Two Environments: Russia & US"
+description: "How the Russian and US environments differ"
+---
+
+Ziplime runs as two independent environments, built for two different markets.
+
+<CardGroup cols={2}>
+  <Card title="Russian environment" icon="flag" href="https://ziplime.finam.ru/">
+    Runs on Yandex Cloud infrastructure. Instruments: stocks, mutual funds, futures, and bonds.
+  </Card>
+
+  <Card title="US environment" icon="flag-usa" href="http://ziplime.limex.com">
+    Runs on AWS infrastructure. Instruments: ETFs and stocks.
+  </Card>
+</CardGroup>
+
+The available instruments differ between environments — the Russian environment covers four asset classes, while the US environment covers ETFs and stocks. Don't assume the two are interchangeable.
+
+Technically, the Russian environment is a fork of the US one with added localization, but **the two environments are fully independent**: the US side runs on infrastructure in the US, the Russian side runs on Finam's internal infrastructure. Load, updates, or incidents on one side don't affect the other.
