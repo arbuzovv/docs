@@ -1,11 +1,11 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "maple",
-  "name": "ZipLime docs",
+  "name": "docs.ziplime.limex.com",
   "colors": {
-    "primary": "#CFFC3E",
+    "primary": "#BFF43B",
     "light": "#87EAE6",
-    "dark": "#8FBE1E"
+    "dark": "#18F51E"
   },
   "favicon": "/favicon.png",
   "navigation": {
@@ -110,10 +110,6 @@
       ]
     }
   },
-  "logo": {
-    "light": "/logo/limex-logo-light.png",
-    "dark": "/logo/limex-logo-dark.png"
-  },
   "navbar": {
     "links": [
       {
@@ -123,7 +119,7 @@
     ],
     "primary": {
       "type": "button",
-      "label": "to ZipLime",
+      "label": "Platform",
       "href": "https://ziplime.limex.com"
     }
   },
