@@ -1,6 +1,6 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "maple",
+  "theme": "mint",
   "name": "docs.ziplime.limex.com",
   "colors": {
     "primary": "#BFF43B",
