@@ -1,11 +1,11 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "maple",
-  "name": "docs.ziplime.limex.com",
+  "theme": "mint",
+  "name": "ZIPLIME",
   "colors": {
-    "primary": "#BFF43B",
-    "light": "#18F51E",
-    "dark": "#18F51E"
+    "primary": "#CEFC31",
+    "light": "#CEFC31",
+    "dark": "#A6D91C"
   },
   "favicon": "/favicon.png",
   "navigation": {
