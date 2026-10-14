@@ -1,0 +1,87 @@
+---
+title: "Vectorized Signals"
+description: "Compute indicators once over the whole history, trade them bar by bar"
+---
+
+Recomputing indicators bar by bar is the most expensive thing an event-driven engine does: `data.history(bar_count=200)` on each of a thousand sessions re-reads and re-averages two hundred rows a thousand times. `compute_signals` moves that arithmetic out of the loop. The decisions — sizing, caps, rolls — stay in `handle_data` and go through the ordinary blotter, slippage and commissions.
+
+## The shape
+
+```python
+from ziplime.finance.execution import MarketOrder
+
+FAST, SLOW = 20, 60
+WARMUP = SLOW                    # bars of history the longest indicator needs
+
+
+async def initialize(context):
+    context.universe = {
+        "SPY": await context.symbol("SPY", mic="ARCX"),
+        "QQQ": await context.symbol("QQQ", mic="XNMS"),
+    }
+
+
+def compute_signals(context, prices):           # once, over the whole history
+    close = prices.close
+    return {
+        "fast": close.rolling(FAST).mean(),
+        "slow": close.rolling(SLOW).mean(),
+    }
+
+
+async def handle_data(context, data):           # bar by bar, as usual
+    signals = context.signals
+    if not (signals.is_ready("fast") and signals.is_ready("slow")):
+        return
+
+    for name, listing in context.universe.items():
+        target = 0.5 if float(signals["fast"][name]) > float(signals["slow"][name]) else 0.0
+        await context.order_target_percent(listing, target, style=MarketOrder())
+```
+
+## The rules
+
+- **`context.universe` is required** — a dict `{name: listing}` set in `initialize`. The keys become the column names of the price panel and of the signals.
+- **`WARMUP`** at module level declares how many bars before the first session the panel includes. Declare it for the *longest* window: too short, and the indicator is still NaN when the run starts.
+- **`compute_signals` is plain `def`.** It receives `prices`, a panel of wide pandas frames — `prices.close`, `prices.open`, `prices.high`, `prices.low`, `prices.volume` — indexed by bar time with one column per name.
+- **Return a dict** of pandas DataFrames (one column per name) or Series (one value per bar).
+
+## Reading signals
+
+`context.signals` is cut to the simulation clock. At bar `t` there is no accessor that returns row `t + 1`.
+
+| Read | Returns |
+| --- | --- |
+| `context.signals["fast"]["SPY"]` | This bar's value for one name |
+| `context.signals["spread"]` | This bar's value of a per-portfolio signal; use it as a number |
+| `context.signals.is_ready("fast")` | `True` once the value is a real number rather than warm-up NaN |
+| `context.signals.history("fast", 20)` | The trailing 20 bars, ending at this one |
+| `context.signals.names` | The signal names `compute_signals` returned |
+
+<Tip>
+  Return the numbers and compare them in `handle_data`, rather than returning `fast > slow`. A comparison against NaN is `False`, so a boolean signal can't tell warm-up from a genuine "no" — and `is_ready` can't help.
+</Tip>
+
+## Look-ahead check
+
+Before the first order, the engine re-runs `compute_signals` on truncated history and compares. A rolling mean gives the same answer either way; a full-sample z-score, a `shift(-1)` or a division by the last value does not, and the run stops with `LookAheadError`:
+
+```
+Signal 'momentum' looks ahead. At bar 240 (2024-03-15) the whole-history computation
+gives 1.0, but computing from the first 240 bars alone -- all that was known then --
+gives 2.0.
+```
+
+The check compares at sampled cut points, so it catches every accidental leak in practice — full-sample normalisation and negative shifts move nearly every row. It is a smoke alarm, not a proof.
+
+Ranking across a row (`close.pct_change(63).rank(axis=1)`) is causal: each bar's rank uses only that bar's values.
+
+## Datasets in signals
+
+A point-in-time dataset mounted in `initialize` is reachable as `prices.dataset(name)`, aligned to the same index, with `known_at` and `age_days` columns showing when each row was filed and how old it is. See [Point-in-Time Datasets](/language/strategy-language/point-in-time-datasets).
+
+## Sweeps
+
+For hundreds of parameter variants, `ziplime.vectorized.kernel.simulate_signals(prices, entries, exits, ...)` runs signals through Ziplime's own vectorized kernel with the same cost models, and the winner is replayed through the event-driven ledger with reconciliation after every bar. Futures and options are refused there. Install `ziplime[numba]` to compile the kernel's inner loop.
+
+Worked examples: [`examples/vectorized`](https://github.com/Limex-com/ziplime/tree/master/examples/vectorized) — `signals_in_run.py` runs the same strategy vectorized and bar by bar and checks them against each other trade for trade; `sweep_then_report.py` sweeps and replays.
