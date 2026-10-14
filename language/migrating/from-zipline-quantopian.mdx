@@ -3,10 +3,18 @@ title: "From Zipline & Quantopian"
 description: "The closest possible migration path"
 ---
 
-If your strategy already runs on **Zipline** or was originally written for **Quantopian**, you're migrating to the platform Ziplime's own engine descends from. This is the most direct migration path available.
+If your strategy runs on **Zipline** or **zipline-reloaded**, or was written for **Quantopian**, you are migrating to the engine Ziplime grew out of. The programming model is the same — `initialize`, `handle_data`, `context`, `data`, `order_target_percent`, `schedule_function`, pipelines.
 
-Existing Zipline-style strategy code can usually be brought in with minimal changes — the main adjustments come from Ziplime's additions on top of stock Zipline: async execution, the unified backtest/live logic, and access to fundamental and alternative data. See [Engine Overview](/language/introduction/engine-overview) for what's been added.
+Three things change in the code:
+
+- Everything that touches the engine is **awaited**, and the hooks are `async def`.
+- `data.current` and `data.history` take lists and return **Polars** frames, so `.iloc` and `.loc` become `bars["close"][-1]`.
+- Orders take an **execution style**: `style=MarketOrder()`.
+
+And one thing changes in the results: fills happen on the **next bar** by default in the CLI and the MCP server, and trading controls are enforced. A migrated backtest usually reports less than the original — that gap is the look-ahead the original had.
+
+The step-by-step guide, with a conversion table and a full before/after example, is [Migrating from Classic Zipline](/language/strategy-language/zipline-migration).
 
 <Note>
-  Quantopian itself has been shut down for some time; if you're migrating old Quantopian research, expect to update deprecated API calls as part of the move.
+  Quantopian research often uses APIs that never made it into open-source Zipline (`quantopian.pipeline.data`, Morningstar fundamentals, `Q500US` filters). In Ziplime, named universes come from `context.universe_symbols(name)` when your asset database carries them and fundamentals from [point-in-time datasets](/language/strategy-language/point-in-time-datasets) or your own data sources.
 </Note>
