@@ -21,7 +21,7 @@ Common fields:
 | `cash_flow` | Cash changes |
 | `positions_value` | Total market value of positions |
 | `positions_exposure` | Total exposure of positions |
-| `positions` | Nested position storage by exchange/account/asset in current runtime |
+| `positions` | Positions keyed by `(exchange_name, trading_account_id, listing)`. Prefer the helper methods below |
 
 Example:
 
@@ -83,11 +83,12 @@ Each `Position` has:
 
 | Field | Meaning |
 | --- | --- |
-| `asset` | Exchange asset |
+| `asset` | Exchange listing |
 | `amount` | Current amount |
-| `cost_basis` | Average cost per share or contract |
+| `cost_basis` | Average cost per share or contract, including commission |
 | `last_sale_price` | Last synced price |
 | `last_sale_date` | Last sale datetime, when available |
+| `exchange_name`, `trading_account_id` | Where the position is held |
 
 ```python
 positions = await context.portfolio.get_asset_positions(context.asset)
@@ -113,6 +114,8 @@ Common fields:
 | `leverage` | Gross leverage |
 | `net_leverage` | Net leverage |
 | `net_liquidation` | Net liquidation value |
+| `initial_margin_requirement`, `maintenance_margin_requirement` | Margin the book requires, including futures |
+| `accrued_interest` | Bond coupon accrued on the book |
 
 Example:
 
@@ -153,4 +156,6 @@ def analyze(context, perf):
     print(perf[["portfolio_value", "cash", "signal"]].tail())
 ```
 
-`perf` is produced after the run. Its exact columns depend on the metrics set and on the names you recorded.
+`perf` is a pandas DataFrame with one row per session, produced after the run. Its exact columns depend on the metrics set and on the names you recorded. `perf["positions"]` holds a snapshot per session, so recorded rows don't change as the run proceeds. Define `analyze` with plain `def`.
+
+For futures, size and risk against notional exposure rather than position value — opening a futures position moves no cash. See [Futures, Options & Bonds](/language/strategy-language/futures-options-bonds#sizing).

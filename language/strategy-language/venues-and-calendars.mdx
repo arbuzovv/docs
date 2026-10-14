@@ -1,0 +1,74 @@
+---
+title: "Venues & Calendars"
+description: "Per-venue trading hours, mixed-market runs, and extensions for new venues and data addresses"
+---
+
+A simulation runs on one clock calendar. Since 2.11.0, each listing is judged by **its own venue's** trading hours, so one backtest can hold instruments from markets that keep different hours.
+
+## What a listing's venue decides
+
+- `data.can_trade` asks the listing's venue. On a daily run: did the venue trade that day? On an intraday run: is it open this minute?
+- Ordering a listing whose market is shut raises an error that names both the listing's calendar and the simulation's.
+- `context.rebalance` leaves a leg alone while its market is shut — neither ordered nor closed.
+- `ExchangeAsset.trading_calendar` is the listing's own calendar, or `None` for a venue the table doesn't know; those fall back to the simulation's calendar.
+
+A run whose listings all trade on the simulation's own calendar gives the same results as before 2.11.0.
+
+## Built-in venues
+
+| Venues (MIC) | Calendar |
+| --- | --- |
+| US equities: `XNYS`, `XNGS`, `XNMS`, `XNCM`, `XASE`, `ARCX`, `BATS`, `IEXG`, `PINX` | `XNYS` |
+| CME: `XCME`, `XCEC` | `CMES` |
+| NYMEX: `XNYM` | `NYMEX` |
+| ICE: `IFEU`, `IFLL`, `IFUS` | `IEPA` |
+| Crypto: `KRME`, `_BNCC`, `_BNCF` | `24/7` |
+
+Moscow is not built in: [zipfinam](https://github.com/arbuzovv/zipFinam) (1.26.10.1 or later) registers `MISX` on `XMOS` and `RTSX` on its own FORTS calendar. Without it, Moscow listings are judged by the simulation's calendar.
+
+## Clocking a mixed run
+
+The simulation calendar has to visit every minute any of the run's venues trades. `clock_calendar_name` picks one:
+
+```python
+from ziplime.utils.venue_calendars import calendar_for_mic, clock_calendar_name
+
+clock_calendar_name(["XNGS", "ARCX"])    # "XNYS" — same schedule
+clock_calendar_name(["XNYS", "KRME"])    # "24/7" — one venue never closes
+```
+
+Pass the result as the run's calendar (`ziplime run -c ...`, or `run_simulation(trading_calendar=...)`). When one venue's calendar already visits every minute the others trade, that calendar is used; otherwise the answer is `24/5` (every weekday, around the clock), or `24/7` when any venue never closes. Leave the benchmark's listing out of the list — it is read, not traded.
+
+`calendar_for_mic(mic)` returns the `ExchangeCalendar` a venue keeps.
+
+## Overrides
+
+Set `ZIPLIME_VENUE_CALENDARS` to add or replace venues without a new release:
+
+```bash
+export ZIPLIME_VENUE_CALENDARS="MEXC=24/7,XHKG=XHKG"
+```
+
+Entries here win over the built-in table and over extensions.
+
+## Extensions
+
+A package can add venues, calendars and data-source addresses without patching Ziplime.
+
+**Venues.** Call `register_venue_calendars({MIC: calendar_name})` on import, or advertise a mapping under the `ziplime.venue_calendars` entry point group, which is loaded on first lookup:
+
+```toml
+[project.entry-points."ziplime.venue_calendars"]
+my_venues = "my_package.venues:VENUES"     # a {MIC: calendar name} mapping, or a callable returning one
+```
+
+**Data-source addresses.** Call `register_address_scheme(scheme, mount)`, or advertise the mount under the `ziplime.address_schemes` entry point group. A strategy then reads `data.history(..., data_source="scheme://...")` with no registration of its own:
+
+```toml
+[project.entry-points."ziplime.address_schemes"]
+algopack = "zipfinam.algopack:mount_address"
+```
+
+A mount is called as `mount(address, *, asset_service, start_date, end_date, trading_calendar)` and returns a `DataSource` (or an awaitable of one). It should accept and ignore keyword arguments it doesn't use. `hf://` is built in.
+
+**Data providers.** Ingest connectors register under the `ziplime.data_providers` entry point group; `ziplime providers` lists what an install can use.
