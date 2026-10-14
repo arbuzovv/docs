@@ -1,17 +1,54 @@
 ---
 title: "Engine Overview"
-description: "The backtesting engine behind Ziplime strategies"
+description: "The open-source backtesting engine behind Ziplime strategies"
 ---
 
-Ziplime strategies are written in **Python** and run on an engine built on **Zipline** — the backtesting engine that once powered the Quantopian platform. It's open source, and Ziplime maintains its own fork: [github.com/Limex-com/ziplime](https://github.com/Limex-com/ziplime).
+Ziplime is an open-source Python backtesting engine: [github.com/Limex-com/ziplime](https://github.com/Limex-com/ziplime). This section documents the engine as you install and run it yourself — current version **2.11.0**.
 
-Unlike a proprietary scripting language, writing a Ziplime strategy means writing Python against the Ziplime/Zipline API. That has a practical benefit: any Python code you already have — your own logic, helper libraries, data processing — can, in principle, be used inside a strategy.
+Ziplime started as a fork of **Zipline**, the engine behind Quantopian, and keeps its programming model: `initialize`, `handle_data`, `context`, `data`, `order_target_percent`. Most of the engine underneath has since been rewritten: Polars instead of pandas in the data layer, asyncio end to end, and Python 3.12+.
 
-## What the engine adds on top of stock Zipline
+<Note>
+  The hosted platform at [ziplime.limex.com](https://ziplime.limex.com) runs the same engine inside a sandbox with a narrower contract: no imports, only `initialize` and `handle_data`, no config class. This section describes the open-source engine. On the hosted platform, follow the rules its own editor and MCP server give you.
+</Note>
 
-- **Fundamental data** — company financials, valuation multiples.
-- **Alternative data** — non-traditional signals beyond price and volume.
-- **Asynchronous core** — key functions are async, so a strategy behaves consistently whether it's running on historical data or live.
-- **Unified backtest / live logic** — the same strategy code runs in both modes, so a backtest result is a meaningful preview of live behavior.
+## Strict by default
 
-See [Under the Hood](/language/introduction/under-the-hood) for the performance layer, and [Writing Strategies](/language/writing-strategies/three-levels) for how you actually build one.
+The engine is built to catch what a hand-written or AI-written strategy gets wrong. The shortcuts that make a backtest look better have to be asked for by name:
+
+- **Next-bar fills.** In the CLI and the local MCP server an order fills on the bar after the decision. Same-bar fills are an explicit flag.
+- **Look-ahead checks on vectorized signals.** `compute_signals` is recomputed on truncated history, and a signal that used the future stops the run before the first order.
+- **Point-in-time data.** Datasets such as fundamentals or insider trades are windowed by the date a row became public, not by the period it describes.
+- **Costs are applied or refused, never dropped.** A cost model that can't be applied stops the run by name.
+- **No tool places an order on its own.** The local MCP server has no order tool.
+
+## What's in the box
+
+| Area | What you get |
+| --- | --- |
+| Asset classes | Equities and ETFs, futures, options, bonds — in one portfolio, one cash balance, one ledger |
+| Simulation | Event-driven engine plus a vectorized kernel, both reporting through the same ledger and cost models |
+| Bar sizes | Any emission rate from one minute to one day (5 minutes, 15, an hour…) |
+| Data | Yahoo Finance, CSV, LimexHub, point-in-time datasets on the Hugging Face Hub, extension data sources |
+| Venues | Each listing keeps its own venue's trading hours, so one run can mix markets |
+| Running | Command line (`ziplime …`), Python API (`run_simulation`), local MCP server for AI agents |
+| Live | The same strategy file runs live on Lime through the Lime Trader SDK |
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Install & run" href="/language/introduction/install-and-run">
+    `pip install ziplime`, ingest data, run your first backtest.
+  </Card>
+
+  <Card title="Strategy language" href="/language/strategy-language/overview">
+    The API you use inside an algorithm file.
+  </Card>
+
+  <Card title="Use it with your AI" href="/language/introduction/local-mcp">
+    Connect Claude Code, Codex or Cursor through MCP.
+  </Card>
+
+  <Card title="What's new" href="/language/introduction/whats-new">
+    Changes in 2.10.3 and 2.11.0, and how to upgrade.
+  </Card>
+</CardGroup>
