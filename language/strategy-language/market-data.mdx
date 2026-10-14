@@ -134,12 +134,14 @@ A continuous future is a data specifier. Ordering one raises.
 
 ### `data.can_trade(assets)`
 
-`True` when the asset is alive for the current session, its venue is open, and there is a known last price. Since 2.11.0 the venue check uses the **listing's own venue calendar**: on a daily run it asks whether the venue traded that day; on an intraday run, whether it is open that minute. See [Venues & Calendars](/language/strategy-language/venues-and-calendars).
+Returns a pandas `Series` of booleans indexed by asset. An asset can trade when it is listed and not yet delisted or auto-closed, is not restricted, and its venue is open. Since 2.11.0 the venue check uses the **listing's own venue calendar**: on a daily run it asks whether the venue traded that day; on an intraday run, whether it is open that minute. See [Venues & Calendars](/language/strategy-language/venues-and-calendars).
 
 ```python
-if not data.can_trade([asset]):
-    return
+tradeable = data.can_trade(context.assets)
+open_now = [asset for asset in context.assets if tradeable[asset]]
 ```
+
+`can_trade` is synchronous and does **not** check that a price exists. Read the price with `data.current` before ordering, and skip the asset when it is missing or zero.
 
 ## Data clock helpers
 
