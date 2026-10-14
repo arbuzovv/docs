@@ -3,112 +3,52 @@ title: "Migrating from Classic Zipline"
 description: "Async functions, Polars frames, execution styles, and the Ziplime runner"
 ---
 
-Ziplime keeps the event-driven strategy model of classic Zipline, but the runtime is not a drop-in replacement. The biggest differences are async strategy functions, Polars data frames, explicit execution styles, and a data-bundle runner built around Ziplime services.
+Ziplime keeps the event-driven strategy model of classic Zipline and zipline-reloaded, but it is not a drop-in replacement. The differences that matter: async strategy functions, Polars data frames, explicit execution styles, and next-bar fills by default.
 
-Use this page when converting an old Zipline algorithm into a Ziplime algorithm file.
+## What stays the same
 
-## What still feels familiar
-
-The core strategy shape is the same:
-
-```python
-def initialize(context):
-    ...
-
-
-def handle_data(context, data):
-    ...
-```
-
-In Ziplime, the main functions become async:
-
-```python
-async def initialize(context):
-    ...
-
-
-async def handle_data(context, data):
-    ...
-```
-
-The same mental model still applies:
-
-- Store persistent strategy state on `context`.
-- Use `handle_data` for per-bar trading logic.
-- Use `schedule_function` for periodic rebalances.
-- Use `record` for custom metrics.
-- Use target order helpers for rebalancing.
+- Persistent strategy state lives on `context`.
+- `initialize` sets up; `handle_data` trades bar by bar.
+- `schedule_function` with `date_rules` and `time_rules`, `record`, `order_target_percent`, pipelines, trading controls.
 
 ## Quick conversion table
 
-| Classic Zipline pattern | Ziplime pattern |
+| Classic Zipline | Ziplime |
 | --- | --- |
-| `from zipline.api import symbol` | Prefer `await context.symbol(...)` inside `initialize`. |
+| `def initialize(context)` | `async def initialize(context)` |
+| `def handle_data(context, data)` | `async def handle_data(context, data)` |
+| `def before_trading_start(context, data)` | `async def before_trading_start(context, data)` |
 | `asset = symbol("AAPL")` | `asset = await context.symbol("AAPL")` |
-| `symbols("AAPL", "MSFT")` | `[await context.symbol(s) for s in ["AAPL", "MSFT"]]` |
+| `symbols("AAPL", "MSFT")` | `await context.symbols("AAPL", "MSFT")` |
 | `data.current(asset, "close")` | `(await data.current(assets=[asset], fields=["close"]))["close"][0]` |
 | `data.history(asset, "close", 20, "1d")` | `await data.history(assets=[asset], fields=["close"], bar_count=20)` |
+| `data.can_trade(asset)` | `data.can_trade([asset])[asset]` |
 | `order(asset, 100)` | `await context.order(asset, 100, style=MarketOrder())` |
 | `order_target_percent(asset, 0.5)` | `await context.order_target_percent(asset, 0.5, style=MarketOrder())` |
-| Pandas results from data access | Polars data frames from `data.current` and `data.history`. |
-| Synchronous `handle_data` | `async def handle_data(...)` and `await` async API calls. |
-| `run_algorithm(...)` with in-memory data | `run_simulation(...)` with loaded Ziplime bundles and services. |
+| `context.portfolio.positions[asset].amount` | `await context.portfolio.get_asset_positions_amount(asset)` |
+| pandas from `data.*` | Polars from `data.*` |
+| `run_algorithm(...)` | `ziplime run ...` or `run_simulation(...)` |
 
 ## Imports
 
-Classic Zipline algorithms often import many API functions:
-
-```python
-from zipline.api import (
-    symbol,
-    order_target_percent,
-    record,
-    schedule_function,
-    date_rules,
-    time_rules,
-)
-```
-
-In Ziplime, prefer direct `context` calls and import only helper classes:
+Import what you use — the algorithm file is a normal Python module. Prefer `context` methods over the `zipline.api` functions:
 
 ```python
 from ziplime.finance.execution import MarketOrder
 from ziplime.utils.events import date_rules, time_rules
 ```
 
-The Zipline-style `ziplime.api` namespace exists for compatibility, but direct `context` calls are easier to read in async code:
-
-```python
-asset = await context.symbol("AAPL")
-await context.order_target_percent(asset, 0.25, style=MarketOrder())
-context.record(weight=0.25)
-```
+`ziplime.api` exists for compatibility, but `context` calls are clearer in async code.
 
 ## Lifecycle functions
-
-### `initialize`
 
 Classic Zipline:
 
 ```python
 def initialize(context):
     context.asset = symbol("AAPL")
-```
 
-Ziplime:
 
-```python
-async def initialize(context):
-    context.asset = await context.symbol("AAPL")
-```
-
-Use `initialize` to look up assets, set strategy parameters, register scheduled callbacks, attach pipelines, and configure controls.
-
-### `handle_data`
-
-Classic Zipline:
-
-```python
 def handle_data(context, data):
     price = data.current(context.asset, "close")
     if price > 100:
@@ -121,110 +61,61 @@ Ziplime:
 from ziplime.finance.execution import MarketOrder
 
 
+async def initialize(context):
+    context.asset = await context.symbol("AAPL")
+
+
 async def handle_data(context, data):
     current = await data.current(assets=[context.asset], fields=["close"])
     price = current["close"][0]
 
     if price > 100:
-        await context.order_target_percent(
-            context.asset,
-            1.0,
-            style=MarketOrder(),
-        )
+        await context.order_target_percent(context.asset, 1.0, style=MarketOrder())
 ```
 
-### `before_trading_start`
+`before_trading_start` should be `async def` so it can await data reads. `analyze(context, perf)` stays plain `def`, and `perf` is still a pandas DataFrame.
 
-Classic Zipline used a synchronous `before_trading_start`. Ziplime currently does the same.
+<Warning>
+  A missing `await` does not raise. The call returns a coroutine that never runs, and the migrated strategy silently places no orders.
+</Warning>
 
-```python
-def before_trading_start(context, data):
-    context.traded_today = False
-```
+## Market data
 
-Do not define it as `async def` in the current Ziplime runtime. Do not place orders in this hook.
-
-### `analyze`
-
-Classic Zipline usually passed a performance DataFrame to `analyze`. Ziplime also calls `analyze` synchronously with the final performance table.
+Ziplime expects lists and returns a Polars DataFrame with `date`, `sid` and the requested fields:
 
 ```python
-def analyze(context, perf):
-    print(perf.tail())
-```
-
-## Market data differences
-
-Classic Zipline allowed scalar-style calls:
-
-```python
-price = data.current(asset, "close")
-history = data.history(asset, "close", 20, "1d")
-```
-
-Ziplime expects lists and returns a Polars DataFrame:
-
-```python
-current = await data.current(
-    assets=[asset],
-    fields=["close", "volume"],
-)
-
-price = current["close"][0]
-volume = current["volume"][0]
-```
-
-Historical windows are also async:
-
-```python
-history = await data.history(
-    assets=[asset],
-    fields=["close"],
-    bar_count=20,
-)
-
+history = await data.history(assets=[asset], fields=["close"], bar_count=20)
 mean_close = history["close"].mean()
+last_close = history["close"][-1]
 ```
 
-If your old strategy uses pandas operations, convert the Ziplime result explicitly:
+`.iloc`, `.loc`, `.at` and `.iat` don't exist on a Polars frame. If old code depends on pandas, convert explicitly with `history.to_pandas()`; prefer Polars expressions for new code.
 
-```python
-pandas_history = history.to_pandas()
-```
+`data.history` excludes the current bar. Read it with `data.current` when the signal needs it.
 
-Prefer Polars-native expressions for new code.
+## Orders
 
-## Order differences
-
-Classic Zipline often allowed:
-
-```python
-order(asset, 100)
-order_target_percent(asset, 0.5)
-```
-
-Ziplime order calls are async and require an execution style:
+Order calls are async and take an execution style:
 
 ```python
 from ziplime.finance.execution import MarketOrder, LimitOrder
 
 await context.order(asset, 100, style=MarketOrder())
-await context.order_target_percent(asset, 0.5, style=MarketOrder())
 await context.order(asset, 100, style=LimitOrder(limit_price=150.0))
+await context.order_value(asset, 5_000, limit_price=150.0)
 ```
 
-Target order helpers do not account for still-open orders. If the old strategy repeatedly submits target orders, add an open-order guard:
+Many Zipline rebalancers loop over `order_target_percent` and then close what's left. `context.rebalance(weights)` does both:
 
 ```python
-if not context.get_open_orders(asset):
-    await context.order_target_percent(asset, 0.5, style=MarketOrder())
+await context.rebalance({asset: 1.0 / len(winners) for asset in winners})
 ```
 
-## Symbol lookup
+## Fill timing changes results
 
-Classic Zipline usually resolved symbols from an asset database with the simulation lookup date.
+The CLI and the MCP server fill on the **next bar** by default; Zipline's typical setup filled on the same bar. Expect a migrated backtest to differ. That difference is the look-ahead the old setup had. `run_simulation` still defaults to same-bar — pass `same_bar_execution=False` to compare like for like.
 
-Ziplime resolves symbols through its asset service:
+## Symbols
 
 ```python
 asset = await context.symbol("AAPL")
@@ -232,32 +123,9 @@ asset = await context.symbol("AAPL", mic="XNGS")
 asset = await context.symbol("AAPL@XNGS")
 ```
 
-When a ticker can exist on multiple exchanges, pass `mic` or use the `SYMBOL@MIC` form.
-
-For named universes:
-
-```python
-context.q100us = await context.symbols_universe("Q100US")
-```
+Pass a MIC only when a ticker exists on several venues. For named universes, `await context.universe_symbols("Q500US")` returns tradeable listings and follows membership over time.
 
 ## Scheduling
-
-Classic Zipline:
-
-```python
-def initialize(context):
-    schedule_function(
-        rebalance,
-        date_rule=date_rules.month_end(),
-        time_rule=time_rules.market_close(minutes=30),
-    )
-
-
-def rebalance(context, data):
-    order_target_percent(context.asset, 1.0)
-```
-
-Ziplime:
 
 ```python
 from ziplime.finance.execution import MarketOrder
@@ -273,112 +141,35 @@ async def initialize(context):
 
 
 async def rebalance(context, data):
-    await context.order_target_percent(
-        context.asset,
-        1.0,
-        style=MarketOrder(),
-    )
+    await context.order_target_percent(context.asset, 1.0, style=MarketOrder())
 ```
 
-In daily simulations, time rules are effectively ignored because the clock emits one bar per session. In minute simulations, time rules matter.
+Time rules work at any intraday emission rate; on a daily run the time rule is ignored. For a simple weekly or monthly rebalance, `if not context.is_month_start(): return` at the top of `handle_data` is often enough.
 
-## Portfolio and positions
+## Portfolio
 
-Classic Zipline commonly used:
-
-```python
-amount = context.portfolio.positions[asset].amount
-cash = context.portfolio.cash
-```
-
-Ziplime exposes portfolio totals directly, but position storage is nested by exchange and account in the current runtime. Prefer helper methods:
+Positions are keyed by exchange, account and listing, so use helpers:
 
 ```python
 cash = context.portfolio.cash
-portfolio_value = context.portfolio.portfolio_value
 amount = await context.portfolio.get_asset_positions_amount(asset)
 value = await context.portfolio.get_asset_positions_value(asset)
 ```
 
-For exact exchange-asset positions:
+## Pipelines
 
-```python
-amount = await context.portfolio.get_exchange_asset_positions_amount(
-    asset,
-    exchange_name="LIME",
-)
-```
-
-## Recording metrics
-
-This part is close to Zipline:
-
-```python
-context.record(signal=signal, cash=context.portfolio.cash)
-```
-
-Recorded values become columns in the final performance table.
-
-## Pipeline migration
-
-Ziplime includes a Zipline-like Pipeline API:
-
-```python
-from ziplime.pipeline import Pipeline
-from ziplime.pipeline.data import EquityPricing
-from ziplime.pipeline.terms.factors import SimpleMovingAverage
-
-
-def make_pipeline():
-    sma_20 = SimpleMovingAverage(
-        inputs=[EquityPricing.close],
-        window_length=20,
-    )
-    return Pipeline(columns={"sma_20": sma_20})
-```
-
-Attach the pipeline in `initialize`:
-
-```python
-async def initialize(context):
-    context.attach_pipeline(make_pipeline(), "signals")
-```
-
-Read output after initialization:
-
-```python
-def before_trading_start(context, data):
-    context.signals = context.pipeline_output("signals")
-```
-
-Pipeline support depends on loaders. Pricing data via `EquityPricing` is the standard path; custom datasets require custom loaders.
+The Pipeline API is Zipline-like — `Pipeline`, `EquityPricing`, `CustomFactor`, screens, `attach_pipeline`, `pipeline_output`. Pricing via `EquityPricing` is the standard path; custom datasets need custom loaders. For alternative data, [point-in-time datasets](/language/strategy-language/point-in-time-datasets) are usually the simpler route.
 
 ## Running migrated algorithms
 
-Classic Zipline examples often call `run_algorithm(...)` directly with pandas data or bundle names.
-
-Ziplime's standard flow is:
-
-1. Ingest or load data into a Ziplime bundle.
-2. Load the bundle with `bundle_service.load_bundle(...)`.
-3. Pass the loaded data source to `run_simulation(...)`.
-4. Point `algorithm_file` at the migrated `.py` strategy file.
-
-```python
-result = await run_simulation(
-    start_date=start_date,
-    end_date=end_date,
-    trading_calendar="NYSE",
-    algorithm_file="my_migrated_algo.py",
-    total_cash=100_000.0,
-    market_data_source=market_data,
-    custom_data_sources=[],
-    emission_rate=datetime.timedelta(days=1),
-    benchmark_asset_symbol="AAPL",
-    stop_on_error=True,
-    asset_service=asset_service,
-)
+```bash
+ziplime ingest-assets
+ziplime ingest -b mybundle -s AAPL,MSFT --start-date 2015-01-01 --end-date 2025-12-31
+ziplime run -f my_migrated_algo.py -b mybundle -s AAPL,MSFT \
+  --start-date 2016-01-01 --end-date 2025-12-31 --commission-per-share 0.005
 ```
+
+Or from Python with `run_simulation(...)` — see [Install & Run](/language/introduction/install-and-run#python-api).
 
 ## Full before and after
 
@@ -419,40 +210,29 @@ async def initialize(context):
 
 async def handle_data(context, data):
     history = await data.history(
-        assets=[context.asset],
-        fields=["close"],
-        bar_count=context.window,
+        assets=[context.asset], fields=["close"], bar_count=context.window,
     )
-    current = await data.current(
-        assets=[context.asset],
-        fields=["close"],
-    )
+    if len(history) < context.window:
+        return
+    current = await data.current(assets=[context.asset], fields=["close"])
 
     price = current["close"][0]
     mean_price = history["close"].mean()
-
     target = 1.0 if price > mean_price else 0.0
 
     if not context.get_open_orders(context.asset):
-        await context.order_target_percent(
-            context.asset,
-            target,
-            style=MarketOrder(),
-        )
+        await context.order_target_percent(context.asset, target, style=MarketOrder())
 
     context.record(price=price, mean_price=mean_price, target=target)
 ```
 
 ## Migration checklist
 
-- Replace `zipline.api` imports with direct `context` calls and Ziplime helper imports.
-- Make `initialize`, `handle_data`, and scheduled callbacks async.
-- Add `await` to asset lookup, data access, order placement, and order cancellation.
-- Pass lists to `data.current` and `data.history`.
-- Update pandas assumptions to Polars or call `.to_pandas()` explicitly.
+- Make `initialize`, `handle_data`, `before_trading_start` and scheduled callbacks `async def`; keep `analyze` plain `def`.
+- Add `await` to asset lookups, data reads, orders and cancellations.
+- Pass lists to `data.current` and `data.history`; replace pandas indexing with Polars.
 - Add an execution style such as `MarketOrder()` to order calls.
-- Use `def before_trading_start`, not `async def before_trading_start`.
-- Use `def analyze`, not `async def analyze`.
-- Replace direct `portfolio.positions[asset]` access with portfolio helper methods.
-- Pass MIC codes for ambiguous symbols.
-- Move runner setup to `run_simulation(...)` with Ziplime data bundles.
+- Replace `portfolio.positions[asset]` with portfolio helper methods.
+- Pass MIC codes only for ambiguous tickers.
+- Rebuild data: `ziplime ingest-assets`, then `ziplime ingest`.
+- Expect different numbers from next-bar fills and enforced controls, and set a real commission.

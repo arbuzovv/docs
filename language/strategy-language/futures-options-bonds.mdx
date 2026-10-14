@@ -1,0 +1,114 @@
+---
+title: "Futures, Options & Bonds"
+description: "Contract chains, rolls, option chains and Greeks, bond analytics — in one portfolio"
+---
+
+Equities, futures, options and bonds share one cash balance, one ledger and one bundle. A cross-asset strategy is an ordinary algorithm file. Worked examples live in [`examples/futures`](https://github.com/Limex-com/ziplime/tree/master/examples/futures), [`examples/options`](https://github.com/Limex-com/ziplime/tree/master/examples/options), [`examples/bonds`](https://github.com/Limex-com/ziplime/tree/master/examples/bonds) and [`examples/cross_asset`](https://github.com/Limex-com/ziplime/tree/master/examples/cross_asset).
+
+## Futures
+
+### Listings vs contracts
+
+A **listing** is what you order and price. A **contract** (`FuturesContract`) carries the specification — multiplier, expiration — and is reached through `listing.asset`.
+
+| Method | Returns |
+| --- | --- |
+| `await context.futures_chain(root, mic=None)` | The chain as listings, ordered by expiration. Element 0 is the front; settled deliveries are included |
+| `await context.front_contract(root, roll_before_days=0, mic=None)` | The nearest contract still alive `roll_before_days` from now, or `None` |
+| `await context.futures_symbol(symbol, mic=None)` | One listing by ticker, e.g. `"CLX26"` |
+| `await context.future_symbol(symbol, mic=None)` | The `FuturesContract` behind a listing — not tradeable |
+| `await context.continuous_future(root, offset=0, roll="volume", adjustment="mul")` | A continuous-future data specifier |
+
+### Rolling
+
+`front_contract` is the pick and the roll at once: once the contract you hold fails the `roll_before_days` test, it returns the next delivery, and you roll by ordering what it now returns.
+
+```python
+from ziplime.finance.execution import MarketOrder
+
+
+async def initialize(context):
+    context.held = None
+
+
+async def handle_data(context, data):
+    front = await context.front_contract("CL", roll_before_days=5)
+    if front is None:
+        return
+    if context.held is not None and context.held != front:
+        await context.order_target(context.held, 0, style=MarketOrder())
+    await context.order_target(front, 1, style=MarketOrder())
+    context.held = front
+```
+
+A continuous future is for reading data. Ordering one raises — order `await data.current_contract(cf)` instead.
+
+### Sizing
+
+Futures sizing is a notional calculation: `price × multiplier × quantity`.
+
+| Method | Returns |
+| --- | --- |
+| `context.notional_exposure(asset, amount, price)` | Notional of `amount` contracts |
+| `context.contracts_for_notional(asset, notional, price)` | Whole contracts closest to a notional, rounded toward zero |
+| `context.futures_margin_requirement(maintenance=False)` | Margin the book requires |
+
+```python
+quotes = await data.current(assets=[front], fields=["price"])
+price = quotes["price"][0]
+contracts = context.contracts_for_notional(
+    asset=front, notional=context.portfolio.portfolio_value * 0.5, price=price,
+)
+```
+
+Opening a futures position moves no cash; variation margin settles daily in both directions. Commission is `PerContract` plus exchange fees by root.
+
+<Warning>
+  Yahoo reports no volume on many futures sessions, and the simulation won't fill on a bar where nothing traded — an order can take several sessions to fill. Expired contracts are also removed from Yahoo, so a chain runs forward from today. Read `examples/futures/README.md` before drawing conclusions from Yahoo futures data.
+</Warning>
+
+## Options
+
+Requires `ziplime[options]` for pricing and Greeks.
+
+| Method | Returns |
+| --- | --- |
+| `await context.option_chain(underlying, expiration_date=None, mic=None)` | An `OptionChain`. `expiration_date` defaults to **today** — the 0DTE chain |
+| `await context.option_symbol(symbol, mic=None)` | One listing by OCC symbol, e.g. `"SPY240614C00523000"` |
+| `context.time_to_expiry(asset)` | Years to the expiration session's close |
+| `await context.option_greeks(asset, volatility=None, rate=0.0, amount=0.0)` | Price and Greeks; `amount` scales them to a position |
+
+Selecting from a chain:
+
+```python
+from ziplime.assets.domain.option_type import OptionType
+
+chain = await context.option_chain(context.underlying)
+call = chain.atm(spot=spot, option_type=OptionType.CALL)
+put = chain.nearest_delta(
+    0.20, OptionType.PUT,
+    spot=spot, years_to_expiry=context.time_to_expiry(chain.puts[0]), volatility=0.18,
+)
+```
+
+`nearest_delta` takes the delta as a magnitude (`0.20` for the 20-delta put) and computes a Black-Scholes delta at the volatility you pass. Near a 0DTE close almost every contract has a delta of 0 or 1, so select by `strike_offset` there instead.
+
+`OptionChain` also has `calls`, `puts`, `strikes`, `at_strike`, `nearest_strike` and `strike_offset`.
+
+- A 0DTE strategy calls `option_chain` every session: contracts are listed fresh each day.
+- `option_greeks` reads the contract's `implied_volatility` field when the data has one and raises when it doesn't, rather than inventing a volatility. Pass `volatility=` explicitly otherwise.
+- Options settle at intrinsic value. Commission is `PerOptionContract` by default.
+
+## Bonds
+
+| Method | Returns |
+| --- | --- |
+| `await context.bond_symbol(symbol, mic=None)` | One bond listing |
+| `await context.bond_schedule(asset)` | Coupon, amortisation, maturity and offer events, by date |
+| `await context.accrued_interest(asset, dt=None)` | Coupon accrued — what a buyer owes on top of the quote |
+| `await context.bond_face_value(asset, dt=None)` | Principal outstanding after amortisation |
+| `await context.bond_dirty_price(asset, quoted_price, dt=None)` | Clean value plus accrued interest |
+| `await context.bond_current_yield(asset, quoted_price, dt=None)` | Annual coupon income over the purchase cost |
+| `await context.bond_yield_to_maturity(asset, quoted_price, dt=None)` | Simple annualised return held to maturity |
+
+Coupons are paid into cash, amortisation reduces principal, and bonds are redeemed at par. Commission is `PerBondTurnover` by default.

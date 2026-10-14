@@ -3,7 +3,20 @@ title: "Scheduling & Controls"
 description: "Running callbacks at specific times and enforcing risk rules"
 ---
 
-Use scheduled functions when your strategy should run at specific times instead of on every bar. Use controls to enforce simple risk rules before orders are accepted.
+Use scheduled functions or calendar gates when your strategy should act at specific times instead of on every bar. Use controls to enforce risk rules before an order is accepted.
+
+## Calendar gates
+
+The simplest way to rebalance weekly or monthly is a gate at the top of `handle_data`:
+
+```python
+async def handle_data(context, data):
+    if not context.is_month_start():     # or context.is_week_start()
+        return
+    ...
+```
+
+Both read the simulation's trading calendar, so holidays are handled without date arithmetic. They are plain calls, not awaited.
 
 ## Scheduling callbacks
 
@@ -29,11 +42,11 @@ async def rebalance(context, data):
     await context.order_target_percent(context.asset, 1.0, style=MarketOrder())
 ```
 
-In daily simulations, the `time_rule` is ignored by the current scheduler because there is only one bar per session. In minute simulations, both date and time rules matter.
+- `date_rule` defaults to every trading day.
+- `time_rule` works at **any intraday emission rate** — 1 minute, 5 minutes, an hour. On a daily run there is one bar per session, so the time rule is ignored.
+- Pass the time rule by keyword. A time rule in the `date_rule` position is accepted with a warning.
 
 ## Date rules
-
-Import from `ziplime.utils.events` or `ziplime.api`.
 
 ```python
 from ziplime.utils.events import date_rules
@@ -47,16 +60,6 @@ from ziplime.utils.events import date_rules
 | `date_rules.month_start(days_offset=0)` | Nth trading day of each month |
 | `date_rules.month_end(days_offset=0)` | N trading days before month end |
 
-Examples:
-
-```python
-date_rules.every_day()
-date_rules.week_start()
-date_rules.week_end(days_offset=1)
-date_rules.month_start(days_offset=2)
-date_rules.month_end()
-```
-
 ## Time rules
 
 ```python
@@ -65,23 +68,15 @@ from ziplime.utils.events import time_rules
 
 | Rule | Meaning |
 | --- | --- |
-| `time_rules.market_open(minutes=30)` | 30 minutes after market open |
-| `time_rules.market_close(minutes=15)` | 15 minutes before market close |
-| `time_rules.every_minute()` | Every minute in minute simulations |
+| `time_rules.market_open(hours=0, minutes=30)` | After market open |
+| `time_rules.market_close(minutes=15)` | Before market close |
+| `time_rules.every_minute()` | Every bar of an intraday run |
 
 Offsets must be between 1 minute and 12 hours.
 
-Examples:
-
-```python
-time_rules.market_open()
-time_rules.market_open(hours=1)
-time_rules.market_close(minutes=30)
-```
-
 ## Calendars
 
-`schedule_function` accepts `calendar=calendars.US_EQUITIES` or `calendar=calendars.US_FUTURES`.
+`schedule_function` uses the simulation's trading calendar unless you pass `calendar=calendars.US_EQUITIES` or `calendar=calendars.US_FUTURES`:
 
 ```python
 from ziplime.utils.events import calendars
@@ -94,79 +89,44 @@ context.schedule_function(
 )
 ```
 
-If `calendar` is omitted, Ziplime uses the simulation trading calendar.
+Any other value raises. For runs that mix venues, see [Venues & Calendars](/language/strategy-language/venues-and-calendars).
 
-## `before_trading_start` vs scheduled callbacks
+## Which hook for what
 
-Use `before_trading_start` for daily preparation that should happen before trading logic.
-
-Use scheduled callbacks for trading actions that should occur at a specific session time.
-
-| Hook | Can place orders? | Async? | Common use |
+| Hook | Can place orders? | Define as | Common use |
 | --- | --- | --- | --- |
-| `before_trading_start` | No | No | Prepare universe, reset daily state, read pipeline output |
-| Scheduled callback | Yes | Yes | Rebalance, exit, risk reduction |
-| `handle_data` | Yes | Yes | Main per-bar trading logic |
+| `before_trading_start` | No | `async def` | Prepare the universe, reset daily state, read pipeline output |
+| Scheduled callback | Yes | `async def` | Rebalance, exit, risk reduction at a set time |
+| `handle_data` | Yes | `async def` | Per-bar trading logic |
 
 ## Trading controls
 
-Controls are usually configured in `initialize`.
-
-### Long-only
+Controls are configured in `initialize` and checked against every order before it is placed. Since 2.10.3 they are **enforced** — earlier versions accepted the limits and enforced none.
 
 ```python
 async def initialize(context):
     context.set_long_only()
-```
-
-### Maximum leverage
-
-```python
-async def initialize(context):
     context.set_max_leverage(1.5)
-```
-
-`run_simulation(..., max_leverage=...)` also registers a leverage control.
-
-### Maximum position size
-
-```python
-async def initialize(context):
-    context.set_max_position_size(
-        asset=None,
-        max_shares=1_000,
-        max_notional=50_000,
-    )
-```
-
-Pass an `asset` to limit only that asset. Use `asset=None` to apply the limit globally.
-
-### Maximum order size
-
-```python
-async def initialize(context):
-    context.set_max_order_size(
-        max_shares=500,
-        max_notional=25_000,
-    )
-```
-
-### Maximum order count
-
-```python
-async def initialize(context):
+    context.set_max_position_size(asset=None, max_shares=1_000, max_notional=50_000)
+    context.set_max_order_size(asset=None, max_shares=500, max_notional=25_000)
     context.set_max_order_count(10)
 ```
 
+| Control | Limits |
+| --- | --- |
+| `set_long_only(on_error="fail")` | No order may take a position short |
+| `set_max_leverage(max_leverage)` | Account leverage. `run_simulation(max_leverage=...)` and `ziplime run --max-leverage` register it too (default 1.0) |
+| `set_min_leverage(min_leverage, grace_period)` | Minimum leverage after a grace period |
+| `set_max_position_size(asset=None, max_shares=None, max_notional=None, on_error="fail")` | Absolute position size, per asset or globally with `asset=None` |
+| `set_max_order_size(asset=None, max_shares=None, max_notional=None, on_error="fail")` | Size of any single order |
+| `set_max_order_count(max_count, on_error="fail")` | Orders per day |
+| `set_asset_restrictions(restrictions, on_error="fail")` | A restricted list |
+
 ### Error behavior
 
-Most controls accept `on_error="fail"` by default. Depending on the control implementation, `"fail"` raises when a rule is violated. Use non-failing modes only when you intentionally want violations to be logged or ignored by that control.
+With `on_error="fail"` (the default) a violating order raises `TradingControlViolation`. With `on_error="log"` the violation is logged as an error and the order goes through.
 
 ## Asset restrictions
-
-`context.set_asset_restrictions(restrictions, on_error="fail")` registers a restricted list.
-
-Restriction classes are available from `ziplime.finance.asset_restrictions` and through `ziplime.api`:
 
 ```python
 from ziplime.finance.asset_restrictions import StaticRestrictions
@@ -177,9 +137,9 @@ async def initialize(context):
     context.set_asset_restrictions(restricted)
 ```
 
-## Cancel policies
+Restricted assets also report `False` from `data.can_trade`.
 
-Import from `ziplime.finance.cancel_policy` or `ziplime.api`.
+## Cancel policies
 
 ```python
 from ziplime.finance.cancel_policy import EODCancel, NeverCancel
@@ -191,22 +151,9 @@ async def initialize(context):
 
 | Policy | Meaning |
 | --- | --- |
-| `EODCancel(warn_on_cancel=True)` | Cancel open orders at session end. |
-| `NeverCancel()` | Leave open orders active until filled or manually canceled. |
+| `EODCancel(warn_on_cancel=True)` | Cancel open orders at session end |
+| `NeverCancel()` | Leave open orders working until filled or cancelled |
 
-## Commission and slippage setup
+## Commission and slippage
 
-Backtest fill models are most commonly configured in `run_simulation(...)`:
-
-```python
-from ziplime.finance.commission import PerDollar
-from ziplime.finance.slippage.fixed_basis_points_slippage import FixedBasisPointsSlippage
-
-result = await run_simulation(
-    ...,
-    equity_commission=PerDollar(cost=0.001),
-    equity_slippage=FixedBasisPointsSlippage(basis_points=5.0, volume_limit=0.1),
-)
-```
-
-Zipline-style `context.set_commission(...)` and `context.set_slippage(...)` are available during initialization. Use them only when your exchange/blotter setup is designed to read those context-level models. For standard `run_simulation` usage, prefer the explicit runner parameters.
+Costs belong to the run, not to the strategy: pass them to `run_simulation(...)` or the CLI. See [Costs & Commissions](/language/writing-strategies/costs-and-commissions).

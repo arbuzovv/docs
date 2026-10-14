@@ -1,0 +1,163 @@
+---
+title: "Install & Run"
+description: "Install the engine, ingest data and run a backtest from the command line or Python"
+---
+
+## Install
+
+Ziplime needs **Python 3.12+**.
+
+```bash
+pip install ziplime
+```
+
+The base install is the engine only. Optional features are pip extras:
+
+| Extra | Adds |
+| --- | --- |
+| `ziplime[mcp]` | The local MCP server (`ziplime mcp`) |
+| `ziplime[huggingface]` | Point-in-time datasets from the Hugging Face Hub (`hf://`) |
+| `ziplime[options]` | Option pricing and Greeks |
+| `ziplime[numba]` | The compiled vectorized kernel |
+| `ziplime[all]` | Everything above |
+
+```bash
+pip install "ziplime[all]"
+```
+
+## Quick start
+
+The order is always the same: instruments first, then bars, then a run.
+
+```bash
+ziplime ingest-assets                       # once: the instrument list (Yahoo, no key)
+ziplime ingest -b demo -s AAPL,MSFT --start-date 2019-01-01 --end-date 2025-12-31
+```
+
+```python
+# sma.py
+from ziplime.domain.bar_data import BarData
+from ziplime.finance.execution import MarketOrder
+from ziplime.trading.trading_algorithm import TradingAlgorithm
+
+
+async def initialize(context: TradingAlgorithm):
+    context.assets = [await context.symbol("AAPL"), await context.symbol("MSFT")]
+    context.fast, context.slow = 20, 50
+
+
+async def handle_data(context: TradingAlgorithm, data: BarData):
+    for asset in context.assets:
+        bars = await data.history(assets=[asset], fields=["close"], bar_count=context.slow)
+        if len(bars) < context.slow:
+            continue
+        closes = bars["close"]
+        target = 0.5 if closes[-context.fast:].mean() > closes.mean() else 0.0
+        await context.order_target_percent(asset=asset, style=MarketOrder(), target=target)
+```
+
+```bash
+ziplime run -f sma.py -b demo -s AAPL,MSFT --start-date 2020-01-01 --end-date 2025-12-31
+```
+
+## Command line
+
+| Command | What it does |
+| --- | --- |
+| `ziplime providers` | Lists the data connectors this install has and which are configured |
+| `ziplime ingest-assets` | Loads reference data into the asset database. Nothing else works before this |
+| `ziplime ingest` | Loads bars into a named bundle |
+| `ziplime bundles` | Lists stored bundles and versions |
+| `ziplime clean` | Removes old bundle versions |
+| `ziplime run` | Runs a backtest over a bundle |
+| `ziplime mcp` | Starts the local MCP server — see [Use It with Your AI](/language/introduction/local-mcp) |
+
+Errors go to stderr with a hint on what to do, and the exit code reflects the result. Run any command with `-h` for its options.
+
+### `ziplime run` defaults
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--emission-rate` | `1d` | How often `handle_data` is called: `1m`, `5m`, `15m`, `30m`, `1h`, `4h`, `1d`, … |
+| `-c, --trading-calendar` | `XNYS` | The simulation's clock calendar |
+| `--capital-base` | `100000` | Starting cash |
+| `--same-bar-execution / --next-bar-execution` | next bar | Same-bar fills use a price the market had not printed yet, so they are opt-in |
+| `--fill-price` | `close` | Bar field an order fills at: `open`, `close`, `high`, `low` |
+| `--commission-per-share` | `0.0` | Equity commission per share |
+| `--slippage-bps` | `5.0` | Fixed slippage; fills are also capped at a tenth of the bar's volume |
+| `--max-leverage` | `1.0` | Account leverage cap |
+| `--benchmark-symbol` | none | Omitted means a zero-return benchmark |
+| `-o, --output` | none | Write the performance table: `.csv` writes CSV, anything else a pickle |
+
+<Warning>
+  The CLI charges **no commission** unless you pass `--commission-per-share`. Set it for any run whose numbers you intend to trust. See [Costs & Commissions](/language/writing-strategies/costs-and-commissions).
+</Warning>
+
+## Python API
+
+`ziplime.core.run_simulation.run_simulation` is what the CLI calls. Use it when you need custom data sources, commission models or a config file.
+
+```python
+import asyncio
+import datetime
+from zoneinfo import ZoneInfo
+
+from ziplime.assets.domain.asset_type import AssetType
+from ziplime.assets.entities.asset_symbol import AssetSymbol
+from ziplime.core.ingest_data import get_asset_service
+from ziplime.core.run_simulation import run_simulation
+from ziplime.utils.bundle_utils import get_bundle_service
+
+
+async def main():
+    tz = ZoneInfo("America/New_York")
+    start = datetime.datetime(2024, 1, 2, tzinfo=tz)
+    end = datetime.datetime(2025, 12, 31, 23, 59, tzinfo=tz)
+
+    asset_service = get_asset_service(clear_asset_db=False)
+    assets = await asset_service.get_exchange_assets_by_symbols(
+        symbols=[AssetSymbol(symbol=s, mic=None) for s in ["AAPL", "MSFT"]],
+        asset_type=AssetType.EQUITY,
+    )
+    market_data, missing = await get_bundle_service().load_bundle(
+        bundle_name="demo", bundle_version=None,
+        frequency=datetime.timedelta(days=1),
+        start_date=start, end_date=end, assets=assets,
+    )
+
+    result = await run_simulation(
+        start_date=start,
+        end_date=end,
+        trading_calendar="XNYS",
+        emission_rate=datetime.timedelta(days=1),
+        total_cash=100_000.0,
+        market_data_source=market_data,
+        custom_data_sources=[],
+        algorithm_file="sma.py",
+        stop_on_error=True,
+        asset_service=asset_service,
+        same_bar_execution=False,
+    )
+    print(result.perf.tail())
+
+
+asyncio.run(main())
+```
+
+<Note>
+  `run_simulation` defaults to `same_bar_execution=True` for backward compatibility, unlike the CLI and the MCP server. Pass `same_bar_execution=False` to get next-bar fills.
+</Note>
+
+Useful parameters:
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `config_file` | `None` | JSON file for the strategy's config class |
+| `benchmark_asset_symbol` / `benchmark_returns` | `None` | Benchmark by symbol, or a returns series |
+| `equity_commission`, `future_commission`, `bond_commission`, `option_commission` | see [Costs](/language/writing-strategies/costs-and-commissions) | Commission models per asset class |
+| `equity_slippage`, `future_slippage`, `bond_slippage`, `option_slippage` | engine defaults | Slippage models per asset class |
+| `max_leverage` | `1.0` | Registers a leverage control |
+| `price_used_in_order_execution` | `"close"` | Fill price field |
+| `intraday_metrics` | `False` | Compute the full metric set on every intraday bar. Expensive; only for code that consumes intraday packets |
+
+`result.perf` is a pandas DataFrame with one row per session, including everything recorded with `context.record(...)`.

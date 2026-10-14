@@ -1,12 +1,75 @@
 ---
 title: "Costs & Commissions"
-description: "How trading costs are modeled in a backtest"
+description: "How commissions and slippage are modeled, and their defaults"
 ---
 
-Broker commissions are included in every backtest by default, so results are closer to what you'd actually see in live trading. You can also configure commissions in more detail for a specific scenario — for example, to match a particular broker's fee schedule.
+Every fill pays a commission and a slippage model, and commission reaches the cost basis and realised P&L, not only cash. What a run charges by default depends on how you start it.
 
-Combined with the platform's [unified backtest / live logic](/language/introduction/engine-overview), this is meant to close the usual gap between "looks great in a backtest" and "holds up in live trading": the same cost model applies in both places, rather than costs being an afterthought bolted on to the results screen.
+## Defaults
+
+|  | `run_simulation(...)` | `ziplime run` |
+| --- | --- | --- |
+| Equities | `PerShare(cost=0.001)` — \$0.001 per share, no minimum | `PerShare(cost=0.0)` — **no commission** unless `--commission-per-share` |
+| Futures | `PerContract(cost=0.85)` plus exchange fees by root symbol | same |
+| Options | `PerOptionContract()` — $$0.65 per contract plus $$0.05 exchange fee | same |
+| Bonds | `PerBondTurnover(cost=0.0003)` — 3 bps of turnover | same |
+| Equity slippage | `FixedBasisPointsSlippage(basis_points=5.0, volume_limit=0.1)` | `--slippage-bps 5.0`, same volume cap |
+| Futures slippage | `VolatilityVolumeShare(volume_limit=0.05)` | same |
+
+<Warning>
+  `ziplime run` charges no equity commission by default. Pass `--commission-per-share` for any run whose numbers you intend to trust.
+</Warning>
+
+## Commission models
+
+```python
+from ziplime.finance.commission import PerShare, PerDollar, PerContract, PerOptionContract
+from ziplime.finance.commission.per_trade import PerTrade
+```
+
+| Model | Asset class | Charges |
+| --- | --- | --- |
+| `PerShare(cost, min_trade_cost)` | Equities | Per share, with an optional minimum per trade |
+| `PerDollar(cost)` | Equities | A fraction of traded value |
+| `PerTrade(cost)` | Any | A flat fee per trade |
+| `PerContract(cost, exchange_fee, min_trade_cost)` | Futures | Per contract, plus exchange fees |
+| `PerFutureTrade(cost)` | Futures | A flat fee per futures trade |
+| `PerOptionContract(cost, exchange_fee, min_trade_cost)` | Options | Per contract, plus exchange fees |
+| `PerBondTurnover(cost)` | Bonds | A fraction of turnover |
+| `NoCommission()` | Any | Nothing — a control run only |
+
+## Slippage models
+
+| Model | Behaviour |
+| --- | --- |
+| `FixedBasisPointsSlippage(basis_points=5.0, volume_limit=0.1)` | Fixed price impact; each fill is capped at `volume_limit` of the bar's volume. `basis_points=0` is a control run that is still volume-capped |
+| `VolatilityVolumeShare(volume_limit=...)` | Futures impact scaled by volatility and volume share |
+| `NoSlippage()` | Fill at the bar price with no impact |
+
+## Setting costs on a run
+
+```python
+from ziplime.finance.commission import PerDollar
+from ziplime.finance.slippage.fixed_basis_points_slippage import FixedBasisPointsSlippage
+
+result = await run_simulation(
+    ...,
+    equity_commission=PerDollar(cost=0.001),
+    equity_slippage=FixedBasisPointsSlippage(basis_points=5.0, volume_limit=0.1),
+)
+```
+
+```bash
+ziplime run -f sma.py -b demo -s AAPL,MSFT --start-date 2020-01-01 --end-date 2025-12-31 \
+  --commission-per-share 0.005 --slippage-bps 5
+```
+
+Costs belong to the run, not to the strategy. `context.set_commission(...)` and `context.set_slippage(...)` exist for Zipline compatibility; prefer the run's parameters so the cost model is visible next to the result.
+
+## Vectorized runs
+
+The vectorized kernel applies the same commission and slippage models. A cost model the kernel can't apply **stops the run by name** — unpaid costs would otherwise show up as a higher return, not as an error.
 
 <Note>
-  A realistic cost model reduces — but doesn't eliminate — the gap between backtest and live results. No backtest reproduces the future with full accuracy.
+  A realistic cost model narrows the gap between backtest and live results, but doesn't close it. No backtest reproduces the future.
 </Note>

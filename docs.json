@@ -61,7 +61,10 @@
             "group": "Introduction",
             "pages": [
               "language/introduction/engine-overview",
-              "language/introduction/under-the-hood"
+              "language/introduction/install-and-run",
+              "language/introduction/local-mcp",
+              "language/introduction/under-the-hood",
+              "language/introduction/whats-new"
             ]
           },
           {
@@ -69,7 +72,8 @@
             "pages": [
               "language/writing-strategies/three-levels",
               "language/writing-strategies/timeframes-and-history",
-              "language/writing-strategies/costs-and-commissions"
+              "language/writing-strategies/costs-and-commissions",
+              "language/writing-strategies/live-trading"
             ]
           },
           {
@@ -82,6 +86,10 @@
               "language/strategy-language/orders",
               "language/strategy-language/portfolio-and-recording",
               "language/strategy-language/scheduling-and-controls",
+              "language/strategy-language/futures-options-bonds",
+              "language/strategy-language/point-in-time-datasets",
+              "language/strategy-language/vectorized-signals",
+              "language/strategy-language/venues-and-calendars",
               "language/strategy-language/pipelines",
               "language/strategy-language/zipline-migration"
             ]

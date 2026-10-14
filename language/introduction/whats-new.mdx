@@ -1,0 +1,61 @@
+---
+title: "What's New"
+description: "Changes in 2.10.3 and 2.11.0, and what to do when upgrading"
+---
+
+## 2.11.0
+
+Each listing now keeps its own venue's trading hours, so one backtest can hold instruments from markets that keep different hours. Extensions can add venues, calendars and data-source addresses without patching Ziplime.
+
+**Upgrading from 2.10.3**
+
+- Single-market backtests are unchanged: a run whose listings all trade on the simulation's own calendar gives the same results.
+- Moscow venues need [zipfinam](https://github.com/arbuzovv/zipFinam) (1.26.10.1 or later). Ziplime itself ships no calendar for MISX or RTSX; without zipfinam, Moscow listings are judged by the simulation's calendar, as before.
+
+**Results that change**
+
+- A listing is judged by its own venue's hours. `data.can_trade` asks the listing's venue: on a daily run, whether it traded that day; on an intraday run, whether it is open that minute.
+- `context.rebalance` leaves a leg alone while its market is shut, instead of failing the run.
+- Ordering a listing whose market is closed now says so and names both calendars. Before, the error blamed delisting.
+
+**New:** venue calendars and extension points for venues and data-source addresses — see [Venues & Calendars](/language/strategy-language/venues-and-calendars).
+
+## 2.10.3
+
+The first release since 1.19.16. Futures, bonds and options trade alongside equities in one portfolio; there is a command line and a local MCP server; point-in-time datasets mount straight from the Hugging Face Hub; and the same file runs live on Lime.
+
+**Upgrading from 1.19.16**
+
+- **Rebuild the asset database.** The schema history restarted, so a 1.19 database cannot be upgraded in place. Run `ziplime ingest-assets --clear`, then re-ingest your bundles.
+- **Bundles are Delta Lake tables** instead of plain Parquet.
+- **Optional features are pip extras** — `mcp`, `huggingface`, `options`, `numba`, `all`. See [Install & Run](/language/introduction/install-and-run).
+
+**Breaking API changes**
+
+| What | Before | Now |
+| --- | --- | --- |
+| `AssetService.get_exchange_assets_by_symbols` | one `AssetType` | also accepts a sequence; raises `AmbiguousSymbol` when a ticker resolves under more than one |
+| Ordering a `ContinuousFuture` | undefined | raises; order the contract `data.current_contract(cf)` returns |
+| `MarketImpactBase.get_txn_volume` | `(data, order)` | `(volume, order)` |
+| `DEFAULT_MOEX_EXCHANGE_FEE` | | renamed `DEFAULT_FUTURE_EXCHANGE_FEE` |
+| `ziplime.data.data_sources.yahoo_finance_*` | | moved under `yahoo/`; old paths emit `DeprecationWarning` |
+| `DataSource` / `DataBundle` | naive or date bounds | timezone-aware datetime bounds and an `ExchangeCalendar` |
+| `get_spot_value` | synchronous | `async` |
+
+**Results that change** — each is a fix, but a result stored from 1.19 will not reproduce:
+
+- **Next-bar execution** is the default in the CLI and the MCP server. Before, `handle_data` saw the portfolio from before the bar's fills, and target orders re-sent orders that had already filled.
+- **Commission reaches the cost basis**, for equities too.
+- **Auto-close works**: a listing past its auto-close date no longer stays on the books at a stale mark.
+- **`get_open_orders(asset)` reports working orders.** It used to return `[]`.
+- **Cancelled and rejected orders leave the open-order book.**
+- **Trading controls are enforced**: `set_max_position_size`, `set_max_order_size`, `set_max_order_count`, `set_long_only`, `set_asset_restrictions`.
+- **The first session is kept** on exchanges east of UTC.
+- **`perf["positions"]` holds snapshots**, so recorded rows no longer change as the run proceeds.
+- **Benchmark returns are aligned to sessions.**
+- **`equity_slippage` and `future_slippage` arguments of `run_simulation` are honoured.**
+- **Futures variation margin applies in both directions.**
+
+**Also fixed:** `order_value` with `limit_price` or `stop_price`, `NoSlippage`, `PerTrade` commission, running without a benchmark, and `ziplime clean`.
+
+The full list is in [release-notes.md](https://github.com/Limex-com/ziplime/blob/master/release-notes.md) in the repository.

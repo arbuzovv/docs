@@ -3,11 +3,7 @@ title: "Context API"
 description: "Look up assets, trade, schedule work, and inspect state through context"
 ---
 
-`context` is the persistent algorithm object passed into lifecycle functions. Store your strategy state on it and call its methods to look up assets, trade, schedule work, inspect portfolio state, and configure controls.
-
-## Direct context style
-
-Prefer direct method calls on `context`:
+`context` is the persistent algorithm object passed into every lifecycle function. Store your strategy state on it and call its methods to look up assets, trade, schedule work, inspect portfolio state and configure controls.
 
 ```python
 from ziplime.finance.execution import MarketOrder
@@ -16,13 +12,13 @@ asset = await context.symbol("AAPL")
 await context.order_target_percent(asset, 0.25, style=MarketOrder())
 ```
 
-Ziplime also exposes Zipline-style functions through `ziplime.api`, but `context` calls are clearer inside async algorithm code.
+Ziplime also exposes Zipline-style functions through `ziplime.api`, but `context` calls are clearer in async code.
 
 ## Asset lookup
 
 ### `await context.symbol(symbol, mic=None, asset_type=AssetType.EQUITY)`
 
-Look up an exchange-listed asset by ticker.
+Look up an exchange listing by ticker. Raises `SymbolNotFound` if there is none.
 
 ```python
 context.aapl = await context.symbol("AAPL")
@@ -30,112 +26,111 @@ context.nflx = await context.symbol("NFLX@XNGS")
 context.msft = await context.symbol("MSFT", mic="XNGS")
 ```
 
-If the symbol string contains `@`, the part after `@` is interpreted as the MIC exchange code.
+A plain ticker is the normal form. `TICKER@MIC` is for when you actually know the venue — an invented MIC is the usual cause of "no asset found". When a ticker exists on more than one venue, name the MIC.
 
-### Multiple symbols
+### `await context.symbols(*symbols)`
 
-Recommended pattern:
-
-```python
-SYMBOLS = ["AAPL", "MSFT", "NVDA"]
-
-
-async def initialize(context):
-    context.assets = [await context.symbol(symbol) for symbol in SYMBOLS]
-```
-
-`context.symbols(*symbols)` exists for compatibility, but in the current implementation it returns a list of awaitables. If you use it, gather or await each item:
+Several lookups at once. Returns a list of listings.
 
 ```python
-import asyncio
-
-context.assets = await asyncio.gather(*context.symbols("AAPL", "MSFT", "NVDA"))
+context.assets = await context.symbols("AAPL", "MSFT", "NVDA")
 ```
 
-### `await context.symbols_universe(name, dt=None)`
+### `await context.universe_symbols(name, dt=None, mic=None, tradeable=True)`
 
-Load a named symbol universe from the asset service.
+The members of a named universe as tradeable listings, ordered by symbol.
 
 ```python
-context.q100us = await context.symbols_universe(name="Q100US")
+universe = await context.universe_symbols("Q500US")
+moex = await context.universe_symbols("IMOEX@MISX")
 ```
 
-If `dt` is omitted, Ziplime uses the current simulation datetime.
+- `dt` defaults to the current session, so calling it at every rebalance follows the composition as it changes rather than freezing the one you read in `initialize`.
+- Only members the run's market data actually holds are returned. Pass `tradeable=False` for the full reference list.
+- `NAME@MIC` or `mic=` pins one venue — useful when an issuer is listed on several markets.
+
+`await context.symbols_universe(name, dt=None)` returns the memberships themselves (issuers, not listings). Use `universe_symbols` for anything you want to price or order.
 
 ### `await context.sid(sid)`
 
 Look up an asset by numeric SID.
 
-```python
-asset = await context.sid(12345)
-```
+### Futures, options and bonds
 
-### `await context.future_symbol(symbol, exchange_name=None)`
+| Method | Returns |
+| --- | --- |
+| `await context.futures_chain(root, mic=None)` | The chain as tradeable listings, ordered by expiration (element 0 is the front) |
+| `await context.front_contract(root, roll_before_days=0, mic=None)` | The nearest contract still alive `roll_before_days` from now |
+| `await context.futures_symbol(symbol, mic=None)` | One futures **listing** by ticker — what you order |
+| `await context.future_symbol(symbol, mic=None)` | The `FuturesContract` behind a listing — the specification, not tradeable |
+| `await context.continuous_future(root, offset=0, roll="volume", adjustment="mul")` | A continuous-future data specifier |
+| `await context.option_chain(underlying, expiration_date=None, mic=None)` | An option chain; defaults to today's expiry (0DTE) |
+| `await context.option_symbol(symbol, mic=None)` | One option listing by OCC symbol |
+| `await context.bond_symbol(symbol, mic=None)` | One bond listing |
 
-Look up a futures contract.
+See [Futures, Options & Bonds](/language/strategy-language/futures-options-bonds) for the full set, including sizing, Greeks and bond analytics.
 
-```python
-contract = await context.future_symbol("ESM25", exchange_name="XCME")
-```
+## Time and calendar
 
-## Time and configuration
+| Method | Returns |
+| --- | --- |
+| `context.get_datetime()` | Current simulation datetime. `context.simulation_dt` holds the same |
+| `context.is_week_start()` | `True` on the week's first trading session |
+| `context.is_month_start()` | `True` on the month's first trading session |
 
-### `context.get_datetime()`
-
-Return the current simulation datetime.
-
-```python
-now = context.get_datetime()
-```
-
-`context.simulation_dt` holds the same current simulation timestamp.
-
-### `context.algorithm.config`
-
-Access a typed algorithm config loaded from JSON.
+`is_week_start()` and `is_month_start()` read the simulation's calendar, so holidays are handled. They are plain calls, not awaited:
 
 ```python
-async def initialize(context):
-    cfg = context.algorithm.config
-    context.max_weight = cfg.max_weight
+async def handle_data(context, data):
+    if not context.is_month_start():
+        return
+    ...
 ```
 
-See [Algorithm file](/language/strategy-language/algorithm-file#algorithm-configuration) for the config class pattern.
+## Datasets
+
+### `await context.huggingface_dataset(repo_id, config=None, revision=None, fields=None, start_date=None, end_date=None, name=None)`
+
+Mount a point-in-time dataset from the Hugging Face Hub, then read it with `data.history(..., data_source=...)`. Requires `ziplime[huggingface]`. See [Point-in-Time Datasets](/language/strategy-language/point-in-time-datasets).
+
+## Configuration
+
+`context.algorithm.config` holds the typed config loaded from JSON. See [Algorithm File](/language/strategy-language/algorithm-file#algorithm-configuration).
 
 ## Available methods
 
 | Method | Await? | Main use |
 | --- | --- | --- |
-| `symbol(symbol, mic=None, asset_type=...)` | Yes | Look up an equity or exchange asset. |
-| `symbols(*symbols, **kwargs)` | See note | Compatibility helper; prefer list comprehensions. |
-| `symbols_universe(name, dt=None)` | Yes | Load a named universe. |
-| `sid(sid)` | Yes | Look up by numeric asset id. |
-| `future_symbol(symbol, exchange_name=None)` | Yes | Look up a futures contract. |
-| `get_datetime()` | No | Current simulation datetime. |
-| `record(**kwargs)` | No | Add custom columns to performance output. |
-| `schedule_function(func, date_rule=None, time_rule=None, ...)` | No | Register a callback. |
-| `order(asset, amount, style, exchange_name=None)` | Yes | Buy or sell a fixed quantity. |
-| `order_percent(asset, percent, style, exchange_name=None)` | Yes | Trade an incremental percent of portfolio value. |
-| `order_target(asset, target, style, exchange_name=None)` | Yes | Target a share/contract quantity. |
-| `order_target_value(asset, target, style, exchange_name=None)` | Yes | Target a dollar exposure. |
-| `order_target_percent(asset, target, style, exchange_name=None)` | Yes | Target a portfolio weight. |
-| `get_open_orders(asset=None)` | No | Inspect open orders. |
-| `get_order(order_id, exchange_name)` | No | Retrieve a specific order. |
-| `cancel_order(order_id, exchange_name, relay_status=True)` | Yes | Cancel an open order. |
-| `set_long_only()` | No | Disallow short positions. |
-| `set_max_leverage(max_leverage)` | No | Cap account leverage. |
-| `set_max_position_size(...)` | No | Cap position size. |
-| `set_max_order_size(...)` | No | Cap single-order size. |
-| `set_max_order_count(max_count)` | No | Cap order count per day. |
-| `attach_pipeline(pipeline, name, ...)` | No | Register a pipeline during initialization. |
-| `pipeline_output(name)` | No | Read attached pipeline results after initialization. |
+| `symbol(symbol, mic=None, asset_type=...)` | Yes | Look up a listing |
+| `symbols(*symbols)` | Yes | Look up several listings |
+| `universe_symbols(name, dt=None, mic=None, tradeable=True)` | Yes | Tradeable members of a named universe |
+| `symbols_universe(name, dt=None)` | Yes | Universe memberships (issuers) |
+| `sid(sid)` | Yes | Look up by numeric id |
+| `futures_chain`, `front_contract`, `futures_symbol`, `future_symbol` | Yes | Futures |
+| `option_chain`, `option_symbol`, `option_greeks` | Yes | Options |
+| `bond_symbol` and bond analytics | Yes | Bonds |
+| `huggingface_dataset(...)` | Yes | Mount a point-in-time dataset |
+| `get_datetime()` | No | Current simulation datetime |
+| `is_week_start()`, `is_month_start()` | No | Calendar gates |
+| `record(**kwargs)` | No | Add columns to the performance output |
+| `schedule_function(func, date_rule=None, time_rule=None, half_days=True, calendar=None)` | No | Register a callback |
+| `order(asset, amount, style, account_id=None, exchange_name=None)` | Yes | Fixed quantity |
+| `order_value(asset, value, limit_price=None, stop_price=None, style=None, exchange_name=None)` | Yes | Fixed money amount |
+| `order_percent(asset, percent, style, exchange_name=None)` | Yes | Incremental percent of portfolio value |
+| `order_target(asset, target, style, exchange_name=None)` | Yes | Target quantity |
+| `order_target_value(asset, target, style, exchange_name=None)` | Yes | Target notional |
+| `order_target_percent(asset, target, style, exchange_name=None, reserved_percentage_for_fees=0.05)` | Yes | Target portfolio weight |
+| `rebalance(weights, style=None, exchange_name=None)` | Yes | Hold exactly these weights; close everything else |
+| `get_open_orders(asset=None)` | No | Working orders |
+| `get_order(order_id, exchange_name)` | No | One order |
+| `cancel_order(order_id, exchange_name, relay_status=True)` | Yes | Cancel an order |
+| `set_long_only()`, `set_max_leverage(...)`, `set_max_position_size(...)`, `set_max_order_size(...)`, `set_max_order_count(...)`, `set_asset_restrictions(...)` | No | Trading controls |
+| `set_cancel_policy(policy)` | No | Cancel policy for open orders |
+| `attach_pipeline(pipeline, name, ...)` | No | Register a pipeline in `initialize` |
+| `pipeline_output(name)` | No | Read pipeline results |
 
 ## Exchange names
 
-Most order methods accept an optional `exchange_name`. If omitted, Ziplime uses the default exchange configured by the simulation runner. The examples in this repository commonly use `"LIME"` as the simulation exchange name.
+Most order methods accept an optional `exchange_name`. If omitted, the engine uses the default exchange of the run, which is `"LIME"` unless you pass `default_exchange_name` to `run_simulation`.
 
-Use explicit exchange names when:
-
-- You run multiple exchanges.
-- You inspect or cancel an order with `get_order` or `cancel_order`.
-- You query portfolio helper methods by exchange.
+Use explicit exchange names when you run multiple exchanges, when you inspect or cancel an order with `get_order` or `cancel_order`, and when you query portfolio helper methods by exchange.

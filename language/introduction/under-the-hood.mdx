@@ -1,20 +1,44 @@
 ---
 title: "Under the Hood"
-description: "Performance and versioning inside the engine"
+description: "Data layer, async runtime, vectorized kernel and fill model"
 ---
 
-## Performance
+## Data layer
 
-Calculations are accelerated using the **Polars** dataframe library, with select performance-critical components implemented in **Rust**. This keeps backtests fast even over long history windows and fine-grained (minute-level) data.
+Market data is held in **Polars** frames. Bundles are stored as **Delta Lake** tables (plain Parquet before 2.10.3), and the asset database is SQLite under `~/.ziplime` by default. Everything a strategy reads from `data.current` and `data.history` is a `polars.DataFrame`.
 
-## Parameters and versioning
+## Async runtime
 
-Strategy parameters can be defined separately from the strategy's logic, so they can be tuned — for optimization, for example — without touching the underlying code. Every change to a strategy's code is kept in version history, so a strategy is a project that evolves over time rather than a single frozen result.
+The engine is **asyncio** end to end. Asset lookups, data reads and order calls are coroutines, which is why a strategy `await`s them. The same runtime drives backtests and live trading, so the strategy code doesn't change between the two.
+
+<Warning>
+  A missing `await` does not raise. The call returns a coroutine that never runs, and the strategy silently places no orders — which looks like a strategy that found no signal.
+</Warning>
+
+## Event-driven and vectorized
+
+|  | What is vectorized | Execution and costs | Futures / options | Use it for |
+| --- | --- | --- | --- | --- |
+| **Signals inside a run** — `compute_signals` | the strategy's arithmetic | the ordinary blotter, every cost model | Yes | one strategy, faster |
+| **Sweep, then replay** — `simulate_signals` | the whole run | Ziplime's kernel and cost models | Refused | hundreds of parameter variants |
+
+The vectorized kernel is Ziplime's own. Install `ziplime[numba]` to compile its inner loop; without it the same loop runs interpreted. A sweep's winner is replayed through the event-driven ledger. See [Vectorized Signals](/language/strategy-language/vectorized-signals).
+
+## Fill model
+
+- An order fills on the bar **after** the decision in the CLI and the MCP server. `run_simulation` takes `same_bar_execution` explicitly — see [Orders](/language/strategy-language/orders#fill-timing).
+- The fill price is one bar field — `close` by default, or `open`, `high`, `low`.
+- No fill happens on a bar with no volume, and fills are capped at a share of the bar's volume by the slippage model.
+- Commission reaches the cost basis and realised P&L, not only cash.
+
+## Venues and calendars
+
+The simulation runs on one clock calendar, but each listing is judged by **its own venue's** trading hours (since 2.11.0). See [Venues & Calendars](/language/strategy-language/venues-and-calendars).
+
+## Parameters
+
+Strategy parameters can live in a typed config class and a JSON file, separate from the strategy logic, so they can be tuned without touching the code. See [Algorithm File](/language/strategy-language/algorithm-file#algorithm-configuration).
 
 ## No restriction on strategy type
 
-The engine doesn't constrain the kind of strategy you build. Portfolio strategies, pairs trading, momentum, or anything else — all run on the same underlying engine.
-
-<Note>
-  This page describes the engine's architecture at a conceptual level. For hands-on strategy examples and code, see [Writing Strategies](/language/writing-strategies/three-levels).
-</Note>
+Portfolio strategies, pairs, momentum, futures rolls, option structures — all run on the same engine and the same ledger.

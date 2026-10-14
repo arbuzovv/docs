@@ -1,21 +1,59 @@
 ---
-title: "Timeframes & History Depth"
-description: "Supported intervals and how far back data goes"
+title: "Data & Timeframes"
+description: "Where market data comes from, how bundles work, and which bar sizes a run supports"
 ---
+
+The open-source engine runs on the data you give it. History depth, delay and coverage are those of your source, not of the engine.
+
+## Data sources
+
+| Source | What | How |
+| --- | --- | --- |
+| Yahoo Finance | Instrument catalogue, daily and intraday bars, dated futures chains (ES, CL, NG, ZC, …) | Built-in connector: `ziplime ingest-assets`, `ziplime ingest -p yahoo` |
+| Hugging Face Hub | Point-in-time fundamentals, insider trades, congressional trades, earnings calendar | Mounted at run time, no ingest — see [Point-in-Time Datasets](/language/strategy-language/point-in-time-datasets) |
+| CSV | Your own bars or custom data | Python API — see `examples/run_simulation_minute_custom_csv_data.py` |
+| LimexHub | Professional market data and fundamentals | Python API, subscription — see `examples/ingest_data_limex_hub.py` |
+| Extensions | Anything a package registers | The `ziplime.data_providers` entry point; `ziplime providers` lists what your install has |
+
+<Warning>
+  Yahoo's history has survivorship bias: delisted stocks aren't there. A strategy that looks good on today's survivors may not have been tradeable at the time.
+</Warning>
+
+## Bundles
+
+Bars are ingested into a named **bundle**, stored as Delta Lake tables under `~/.ziplime/data`, and keyed by the `sid` of each instrument in the asset database. That is why instruments come first:
+
+```bash
+ziplime ingest-assets
+ziplime ingest -b demo -s AAPL,MSFT --start-date 2019-01-01 --end-date 2025-12-31 -f 1d
+ziplime bundles
+```
+
+- `-f, --frequency` sets the bar interval of the bundle: `1m`, `5m`, `15m`, `30m`, `1h`, `1d`, and others.
+- `--merge` adds to an existing bundle instead of replacing it.
+- `--forward-fill` (on by default) fills sessions an instrument didn't trade with its previous close.
+- A ticker that isn't unique must be written `TICKER@MIC`.
+
+Each ingest creates a new bundle version; `ziplime run --bundle-version` picks one, and `ziplime clean` removes old ones.
 
 ## Timeframes
 
-The minimum backtest interval is **1 minute**. From there, you can aggregate to 2, 3, 4 minutes, or any larger interval you need — up to daily and beyond.
+A run's **emission rate** — how often `handle_data` is called — can be anything from one minute to one day: 1 minute, 5, 15, an hour, a day.
 
-## History depth
+```bash
+ziplime run -f strategy.py -b intraday -s AAPL --emission-rate 5m \
+  --start-date 2025-01-02 --end-date 2025-03-31
+```
 
-Historical data is available from **2005** to the present.
+- A minute bundle can feed a slower run: in the Python API, `load_bundle(..., frequency=..., aggregations=[...])` aggregates bars to the requested frequency (see `examples/run_simulation_daily_yahoo_finance.py`).
+- Intraday vendor bars are placed on the simulation clock so no bar leaks into the one before it.
+- `time_rules` in `schedule_function` work at any intraday rate.
+- `data.history(frequency=...)` reads a window at a different interval from the emission rate.
 
-| Environment | Delay |
-| --- | --- |
-| Russia | No delay |
-| US | 15 minutes |
+## Point in time
+
+Datasets that describe the past with a delay — filings, fundamentals, disclosures — are windowed by the date a row **became public**, not by the period it describes. A strategy on bar `t` sees only what was published by `t`.
 
 <Warning>
-  The engine is not intended for strategies where outcomes depend on sub-second timing (high-frequency trading, latency arbitrage). See [Limitations](/language/limitations/not-for-hft).
+  The engine is not intended for strategies whose outcome depends on sub-second timing, such as high-frequency trading or latency arbitrage. See [Limitations](/language/limitations/not-for-hft).
 </Warning>

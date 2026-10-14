@@ -1,0 +1,61 @@
+---
+title: "Use It with Your AI"
+description: "The local MCP server: let Claude Code, Codex or Cursor backtest through the engine"
+---
+
+Whatever writes your strategies — Claude Code, Codex, Cursor — can call Ziplime directly through MCP, so the numbers come from the engine instead of from the model.
+
+## Install and connect
+
+```bash
+pip install "ziplime[mcp]"
+```
+
+**Claude Code:**
+
+```bash
+claude mcp add ziplime -- ziplime mcp
+```
+
+**Claude Desktop, Cursor, Windsurf** or any client that launches stdio servers:
+
+```json
+{ "mcpServers": { "ziplime": { "command": "ziplime", "args": ["mcp"] } } }
+```
+
+<Tip>
+  If you installed into a virtualenv, put the full path to its `ziplime` executable in `command` — desktop apps don't see your shell's `PATH`.
+</Tip>
+
+## Tools
+
+The local server exposes 14 tools:
+
+| Stage | Tools |
+| --- | --- |
+| Data | `list_data_providers`, `list_bundles`, `ingest_instruments`, `ingest_market_data` |
+| Build | `get_strategy_language_reference`, `write_strategy`, `check_strategy_code`, `list_strategies`, `read_strategy` |
+| Test | `run_backtest`, `list_backtests`, `get_backtest`, `compare_backtests` |
+| Live | `describe_live_trading` — explains the route to live; places no orders |
+
+`check_strategy_code` is a fast syntax-tree check that runs before a backtest is spent on the code. It blocks only on certain failures (a syntax error, a missing `handle_data`, a hook with the wrong signature) and reports likely mistakes — a missing `await`, `.iloc` on a Polars frame — as advisories that never block a run.
+
+Backtests started through MCP use **next-bar fills** by default.
+
+## Safety
+
+- The server has **no order tool**. Live trading runs from your own terminal, never through a tool.
+- It **does run the code the agent writes**, on your machine, with your permissions. Read `SECURITY.md` in the repository before pointing an agent at it.
+
+## Local and hosted
+
+There is also a hosted server at `https://ziplime.limex.com/mcp` with professional US data, screening and factor research. The two run the same engine under different code contracts:
+
+| | Local — `ziplime mcp` | Hosted — `ziplime.limex.com/mcp` |
+| --- | --- | --- |
+| Install | `pip install "ziplime[mcp]"` | nothing |
+| Account | none | ZipLime account |
+| Strategy code | a normal Python module: imports, `before_trading_start`, `analyze`, config class | a sandbox: no imports, only `initialize` and `handle_data` |
+| Data | Yahoo Finance, Hugging Face datasets, your CSVs | professional US equity data with fundamentals and factors |
+
+Each server gives the agent its own rules through `get_strategy_language_reference`, so an agent connected to both writes the right code for each.
