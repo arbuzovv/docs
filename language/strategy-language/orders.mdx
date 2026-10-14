@@ -1,9 +1,9 @@
 ---
 title: "Orders"
-description: "Placing, targeting, and cancelling orders from context"
+description: "Placing, targeting, rebalancing and cancelling orders from context"
 ---
 
-Orders are async calls on `context`. Place them in `handle_data` or in scheduled callbacks. Do not place orders in `initialize` or `before_trading_start`.
+Orders are async calls on `context`. Place them in `handle_data` or in scheduled callbacks — not in `initialize` or `before_trading_start`.
 
 ```python
 from ziplime.finance.execution import MarketOrder
@@ -17,8 +17,6 @@ await context.order_target_percent(
 
 ## Execution styles
 
-Import execution styles from `ziplime.finance.execution`.
-
 ```python
 from ziplime.finance.execution import (
     MarketOrder,
@@ -30,98 +28,90 @@ from ziplime.finance.execution import (
 
 | Style | Example | Meaning |
 | --- | --- | --- |
-| `MarketOrder()` | `MarketOrder()` | Fill using the configured simulation execution price and slippage model. |
-| `LimitOrder(limit_price)` | `LimitOrder(150.0)` | Buy no higher than the limit, sell no lower than the limit. |
-| `StopOrder(stop_price)` | `StopOrder(145.0)` | Trigger a market order after the stop threshold is reached. |
-| `StopLimitOrder(limit_price, stop_price)` | `StopLimitOrder(151.0, 149.0)` | Trigger a limit order after the stop threshold is reached. |
+| `MarketOrder()` | `MarketOrder()` | Fill at the run's fill price plus slippage |
+| `LimitOrder(limit_price)` | `LimitOrder(150.0)` | Buy no higher than the limit, sell no lower |
+| `StopOrder(stop_price)` | `StopOrder(145.0)` | Becomes a market order once the stop is reached |
+| `StopLimitOrder(limit_price, stop_price)` | `StopLimitOrder(151.0, 149.0)` | Becomes a limit order once the stop is reached |
 
 ## Fixed quantity
 
-### `await context.order(asset, amount, style, exchange_name=None)`
+### `await context.order(asset, amount, style, account_id=None, exchange_name=None)`
 
-Positive `amount` buys or covers. Negative `amount` sells or shorts.
+Positive `amount` buys or covers; negative sells or shorts.
 
 ```python
 await context.order(context.asset, 100, style=MarketOrder())
 await context.order(context.asset, -50, style=MarketOrder())
+await context.order(context.asset, 100, style=LimitOrder(limit_price=150.0))
 ```
 
-Limit order:
+## Fixed money amount
+
+### `await context.order_value(asset, value, limit_price=None, stop_price=None, style=None, exchange_name=None)`
+
+Buy or sell `value` worth of the asset. Pass either a `style` or the shorthand prices: `limit_price` alone means a limit order, `stop_price` alone a stop, both a stop-limit, neither a market order. Combining `style` with a price raises.
 
 ```python
-await context.order(
-    context.asset,
-    100,
-    style=LimitOrder(limit_price=150.0),
-)
+await context.order_value(context.asset, 5_000)
+await context.order_value(context.asset, 5_000, limit_price=150.0)
 ```
 
-## Target quantity
+## Targets
 
 ### `await context.order_target(asset, target, style, exchange_name=None)`
 
-Adjust your position to a target number of shares or contracts.
+Adjust the position to a target number of shares or contracts.
 
 ```python
 await context.order_target(context.asset, 200, style=MarketOrder())
 await context.order_target(context.asset, 0, style=MarketOrder())
 ```
 
-## Portfolio percent
+### `await context.order_target_value(asset, target, style, exchange_name=None)`
 
-### `await context.order_target_percent(asset, target, style, exchange_name=None, reserved_percentage_for_fees=0.05)`
+Adjust the position to a target notional value.
 
-Adjust your position to a target portfolio weight. `target` must be between `-1` and `1`.
+### `await context.order_target_percent(asset, target, style, exchange_name=None)`
+
+Adjust the position to a target share of portfolio value. `target` must be between `-1` and `1`. The quantity is reduced by the projected commission and slippage, so the order fits the cash it is sized against.
 
 ```python
-# Allocate 25% of the portfolio to AAPL.
 await context.order_target_percent(context.aapl, 0.25, style=MarketOrder())
-
-# Close the position.
 await context.order_target_percent(context.aapl, 0.0, style=MarketOrder())
 ```
 
-This is the most common helper for rebalancing strategies.
-
 ### `await context.order_percent(asset, percent, style, exchange_name=None)`
 
-Order an incremental percent of current portfolio value. This is not a target. It adds or removes exposure relative to the current position.
+Order an **incremental** percent of portfolio value relative to the current position. Not a target.
+
+## Rebalance a book
+
+### `await context.rebalance(weights, style=None, exchange_name=None)`
+
+Hold exactly these weights and nothing else. Every listing named is ordered to its target weight, and **every position not named is closed** — the half that strategies forget, so a name drops out of the universe and quietly stays in the book.
 
 ```python
-# Buy approximately 10% of current portfolio value.
-await context.order_percent(context.asset, 0.10, style=MarketOrder())
+await context.rebalance({listing: 0.1 for listing in winners})
+await context.rebalance({})          # go flat
 ```
 
-## Dollar value
-
-### `await context.order_target_value(asset, target, style, exchange_name=None)`
-
-Adjust your position to a target notional value.
-
-```python
-await context.order_target_value(context.asset, 10_000, style=MarketOrder())
-await context.order_target_value(context.asset, 0, style=MarketOrder())
-```
-
-### `context.order_value(...)`
-
-`order_value` is present as a Zipline-style compatibility method for incremental dollar orders. In current Ziplime strategy code, prefer `order_target_value`, `order_percent`, or `order` unless you have verified that your runtime path supports the exact `order_value` behavior you need.
+- Weights are shares of portfolio value, as in `order_target_percent`. They are not checked against 1.0, because a futures book is levered by construction.
+- `style` defaults to `MarketOrder()`.
+- A leg whose market is shut at that moment is left exactly as it is — neither ordered nor closed (since 2.11.0).
+- Name only listings that have a price today: ordering one with no price raises.
 
 ## Open orders
 
 ### `context.get_open_orders(asset=None)`
 
-Return currently open orders. Pass an asset to filter by asset.
+Working orders. Pass an asset to filter. Cancelled and rejected orders are removed from this book.
 
 ```python
-open_orders = context.get_open_orders(context.asset)
-if open_orders:
+if context.get_open_orders(context.asset):
     return
 ```
 
 ### `context.get_order(order_id, exchange_name)`
-
-Retrieve an order by id.
 
 ```python
 order = context.get_order(order_id, exchange_name="LIME")
@@ -131,8 +121,6 @@ if order is not None:
 
 ### `await context.cancel_order(order_id, exchange_name, relay_status=True)`
 
-Cancel an open order.
-
 ```python
 for order in context.get_open_orders(context.asset):
     await context.cancel_order(order.id, exchange_name=order.exchange_name)
@@ -140,53 +128,51 @@ for order in context.get_open_orders(context.asset):
 
 ## Returned order object
 
-Order methods return an `Order` object or `None` if no order was placed.
-
-Useful fields:
+Order methods return an `Order`, or `None` if no order was placed.
 
 | Field | Meaning |
 | --- | --- |
-| `id` | Ziplime order id |
-| `asset` | Ordered asset |
+| `id` | Order id |
+| `asset` | Ordered listing |
 | `amount` | Requested amount |
 | `filled` | Filled amount |
 | `open_amount` | Remaining amount |
-| `status` | Current order status |
+| `status` | Current status |
 | `commission` | Accumulated commission |
-| `dt` | Last order update datetime |
+| `dt` | Last update datetime |
 | `exchange_name` | Exchange that owns the order |
 
 ## Fill timing
 
-`run_simulation(..., same_bar_execution=True)` means orders submitted during `handle_data` can be filled in the same bar. With `same_bar_execution=False`, orders submitted in `handle_data` are filled on a later bar.
+| Where you run | Default | Switch |
+| --- | --- | --- |
+| `ziplime run` | Next bar | `--same-bar-execution` |
+| Local MCP server | Next bar | — |
+| `run_simulation(...)` | Same bar | `same_bar_execution=False` |
 
-Execution price is controlled by `price_used_in_order_execution`, one of `"open"`, `"close"`, `"low"`, or `"high"`, and by the configured slippage model.
+With next-bar execution an order placed in `handle_data` fills on the following bar, and `handle_data` sees a portfolio that already reflects earlier fills. Same-bar execution fills at the close of the bar the decision was made on — a price the market had not printed yet.
 
-## Target-order warning
+The fill price is one bar field: `close` by default, or `open`, `high`, `low` (`--fill-price` / `price_used_in_order_execution`). No fill happens on a bar with no volume, and the slippage model caps a fill at a share of the bar's volume, so a large order can fill over several bars.
 
-Target helpers do not automatically account for open orders that have not filled yet. This pattern can over-order:
+## Target orders and open orders
+
+Target helpers size against the current position and do **not** count orders that haven't filled yet. Two target calls before a fill over-order:
 
 ```python
 await context.order_target_percent(asset, 0.5, style=MarketOrder())
-await context.order_target_percent(asset, 0.5, style=MarketOrder())
+await context.order_target_percent(asset, 0.5, style=MarketOrder())   # 100%, not 50%
 ```
 
-Safer pattern:
+Guard with open orders, or use `context.rebalance`:
 
 ```python
 if not context.get_open_orders(asset):
     await context.order_target_percent(asset, 0.5, style=MarketOrder())
 ```
 
-## Equal-weight rebalance
+## What raises
 
-```python
-from ziplime.finance.execution import MarketOrder
-
-
-async def rebalance(context, data):
-    weight = 1.0 / len(context.assets)
-    for asset in context.assets:
-        if not context.get_open_orders(asset):
-            await context.order_target_percent(asset, weight, style=MarketOrder())
-```
+- Ordering a `ContinuousFuture` — order `await data.current_contract(cf)` instead.
+- Ordering a `FuturesContract` from `context.future_symbol` — order the listing from `futures_symbol`, `futures_chain` or `front_contract`.
+- Ordering a listing whose market is closed — the error names the listing's calendar and the simulation's.
+- An order a [trading control](/language/strategy-language/scheduling-and-controls#trading-controls) rejects, with the default `on_error="fail"`.
