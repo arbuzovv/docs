@@ -1,0 +1,65 @@
+---
+title: "Live Trading on Lime"
+description: "Run the same strategy file live through the Lime Trader SDK, with opt-in order guards"
+---
+
+Execution sits behind one interface. A backtest uses `SimulationExchange`; live trading swaps in `LimeTraderSdkExchange` and runs **the same strategy file**. Lime is the reference adapter — another broker means subclassing the same exchange interface.
+
+<Warning>
+  Live trading places real orders. It runs from your own terminal or job, never through the local MCP server, which has no order tool by design.
+</Warning>
+
+## Run
+
+```python
+import datetime
+from pathlib import Path
+
+from ziplime.core.run_live_trading import run_live_trading
+
+if __name__ == "__main__":
+    perf = run_live_trading(
+        trading_calendar="XNYS",
+        algorithm_file=str(Path("strategy.py").absolute()),
+        config_file=str(Path("strategy_config.json").absolute()),
+        total_cash=100_000.0,
+        emission_rate=datetime.timedelta(minutes=1),
+    )
+    print(perf.tail())
+```
+
+`run_live_trading` is synchronous: it runs its own event loop on a real-time clock. See [`examples/run_live_trading.py`](https://github.com/Limex-com/ziplime/blob/master/examples/run_live_trading.py).
+
+## Credentials and account
+
+- By default the exchange reads Lime Trader SDK credentials from the environment. To use a credentials file, construct `LimeTraderSdkExchange(..., lime_sdk_credentials_file=...)` and pass it as `exchange=`.
+- Market data from Lime reads `LIME_SDK_CREDENTIALS_FILE`.
+- If the credentials give access to several brokerage accounts, set `LIME_SDK_ACCOUNT_ID`. Automatic selection is refused for safety.
+
+## What the adapter does
+
+- Async throughout.
+- Orders are validated by the broker and rounded down to whole lots (whole shares).
+- Fills are deduplicated from the account's trades.
+- **Capital allocation per strategy**: with `capital_limit`, the strategy sees the account's positions but trades its allocated capital, not the whole account's cash.
+- A single-tick clock for scheduled deployments.
+
+## Order guards
+
+Opt-in, read from the environment when the exchange is constructed (so a strategy can't relax them midway). All are unset by default.
+
+| Variable | Effect |
+| --- | --- |
+| `ZIPLIME_ORDER_DEADLINE_UTC` | Refuse to submit or cancel after this instant, so a signal that went stale in a queue is never sent |
+| `ZIPLIME_REQUIRE_ORDER_RISK_LIMITS=true` | Turn on a fail-closed risk profile built from the variables below |
+| `ZIPLIME_ALLOW_SELL` | Whether sell orders are allowed |
+| `ZIPLIME_MAX_ORDER_QUANTITY` | Maximum quantity per order |
+| `ZIPLIME_MAX_ORDER_NOTIONAL_USD` | Maximum notional per order |
+| `ZIPLIME_MAX_ORDERS_PER_INVOCATION` | Maximum orders per run |
+| `ZIPLIME_ALLOWED_SYMBOLS` | Optional allowlist of symbols |
+
+## Before going live
+
+- Backtest with next-bar fills and a real commission (`--commission-per-share`), not the CLI's zero default.
+- Make sure every `TICKER@MIC` you trade resolves in your asset database.
+- Start with the guards on and a small `capital_limit`.
