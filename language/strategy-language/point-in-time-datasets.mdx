@@ -1,0 +1,109 @@
+---
+title: "Point-in-Time Datasets"
+description: "Mount fundamentals, insider, congressional and earnings data from the Hugging Face Hub"
+---
+
+Ziplime reads point-in-time datasets straight from the Hugging Face Hub — no ingest step, no bundle to build, no credentials. Rows are indexed on the date they **became public**, so a strategy on bar `t` sees only what was known by `t`.
+
+```bash
+pip install "ziplime[huggingface]"
+```
+
+## Published datasets
+
+| Dataset | What |
+| --- | --- |
+| `ZipLime/congress-trading` | Congressional trading disclosures |
+| `ZipLime/insider-trading` | Insider transactions (Form 4) |
+| `ZipLime/earnings-calendar` | Earnings releases, with acceptance timestamps |
+| `ZipLime/company-fundamentals` | Company fundamentals |
+
+Browse them at [huggingface.co/ZipLime](https://huggingface.co/ZipLime). Each dataset card describes its tables (configs) and columns.
+
+## The one-line form
+
+Name the dataset by address inside `data.history`:
+
+```python
+df = await data.history(
+    assets=context.universe,
+    bar_count=40,
+    fields=["net_notional_usd"],
+    data_source="hf://ZipLime/congress-trading/features",
+)
+```
+
+The first read resolves the dataset to a commit, downloads only the Parquet parts the simulation window can reach, maps tickers onto the asset database and keeps the result in memory.
+
+<Warning>
+  The one-line form mounts the simulation's own window, so it sees **nothing published before the first bar**. A signal that looks back 90 days starts blind. Use the explicit form with an earlier `start_date` when you need history from before the run.
+</Warning>
+
+## The explicit form
+
+Mount once in `initialize`, reaching back before the first bar, then read it like any other source:
+
+```python
+import datetime
+
+LOOKBACK = datetime.timedelta(days=120)
+
+
+async def initialize(context):
+    context.universe = await context.universe_symbols("Q500US")
+    context.insiders = await context.huggingface_dataset(
+        "ZipLime/insider-trading",
+        config="features",
+        revision="ba0785efcede0b3a13af48dc658a1d39bc87ad1e",
+        fields=["is_cluster_buy", "n_unique_buyers_30d"],
+        start_date=context.clock.start_session - LOOKBACK,
+    )
+
+
+async def handle_data(context, data):
+    rows = await data.history(
+        assets=context.universe,
+        since=datetime.timedelta(days=90),
+        fields=["is_cluster_buy"],
+        data_source=context.insiders,
+    )
+    ...
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `repo_id` | `owner/name` on the Hub, or a full `hf://owner/name/config` address |
+| `config` | The table to mount. Defaults to `features` when the dataset has one |
+| `revision` | Branch, tag or commit. A branch is resolved to a commit and reported |
+| `fields` | Columns to keep besides `date` and `sid`. All by default |
+| `start_date`, `end_date` | Window to fetch. Default: the simulation's own |
+| `name` | What to call the source. Default: its address |
+
+## Pin a revision
+
+These datasets are append-only and grow. Left on `main`, the same backtest a month apart reads different data and returns a different number. The engine resolves a branch to a commit up front and logs it:
+
+```text
+Pinned a Hugging Face dataset to the commit it is at now
+  dataset=ZipLime/congress-trading revision=67c335f5207d5190ada5f89803615848dbf52ee0
+```
+
+Pass that commit back as `revision=` to repeat the run exactly.
+
+## Read the mount report
+
+The mount logs how many Parquet parts it read, how many rows fell in the window and how many it mapped onto listings, and which tickers matched no listing. A large drop usually means the asset database is missing instruments — ingest them, or the rows are silently absent from every read.
+
+## Event data wants `since`
+
+Disclosure datasets are sparse: thirty filings for one ticker can span four years. Read them with `since=datetime.timedelta(...)` rather than `bar_count=`.
+
+## In vectorized signals
+
+A mounted dataset is also available to `compute_signals` as `prices.dataset(name)`. See [Vectorized Signals](/language/strategy-language/vectorized-signals).
+
+## Other address schemes
+
+`hf://` is built in. Extensions can register their own schemes, and a strategy then reads `data.history(..., data_source="scheme://...")` with no registration of its own — zipfinam adds `algopack://` for MOEX AlgoPack. See [Venues & Calendars](/language/strategy-language/venues-and-calendars#extensions).
+
+Worked examples, with results and the controls they are measured against, are in [`examples/huggingface`](https://github.com/Limex-com/ziplime/tree/master/examples/huggingface).
