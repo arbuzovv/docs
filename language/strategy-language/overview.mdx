@@ -3,11 +3,11 @@ title: "Overview"
 description: "The language surface you use inside a Ziplime algorithm file"
 ---
 
-This guide documents the language surface you use inside a Ziplime algorithm file. An algorithm file is ordinary Python, but Ziplime gives it a small event-driven API:
+An algorithm file is an ordinary Python module. The engine imports it, so you can `import numpy`, `polars`, `talib` or anything else installed, and it calls the functions it finds by name:
 
-- `context` stores your strategy state and exposes trading functions.
+- `context` stores your strategy state and exposes the trading API.
 - `data` gives access to current and historical market data.
-- Lifecycle functions tell Ziplime when to set up, trade, prepare a session, and analyze results.
+- Lifecycle functions tell the engine when to set up, trade, prepare a session and report.
 
 Most strategy work happens in two functions:
 
@@ -21,11 +21,13 @@ async def handle_data(context, data):
 
 ## Mental model
 
-`initialize` is your setup block. Look up assets, store parameters, register scheduled callbacks, and configure controls there.
+`initialize` is your setup block. Look up assets, store parameters, register scheduled callbacks, configure controls, mount datasets.
 
-`handle_data` is your trading block. It runs on every emitted bar, reads `data`, checks portfolio state, places orders, and records metrics.
+`handle_data` is your trading block. It runs on every emitted bar, reads `data`, checks portfolio state, places orders and records metrics.
 
-`before_trading_start` is an optional daily preparation hook. Use it for daily universe selection or pipeline output. Do not place orders there.
+`before_trading_start` is an optional daily preparation hook. Use it for universe selection or pipeline output. Do not place orders there.
+
+`compute_signals` is an optional vectorized hook, computed once over the whole history before the first bar. See [Vectorized Signals](/language/strategy-language/vectorized-signals).
 
 `analyze` is an optional reporting hook after the backtest finishes.
 
@@ -39,22 +41,14 @@ SYMBOLS = ["AAPL", "MSFT", "NVDA"]
 
 async def initialize(context):
     context.assets = [await context.symbol(symbol) for symbol in SYMBOLS]
-    context.has_rebalanced = False
 
 
 async def handle_data(context, data):
-    if context.has_rebalanced:
+    if not context.is_month_start():
         return
 
     weight = 1.0 / len(context.assets)
-    for asset in context.assets:
-        await context.order_target_percent(
-            asset=asset,
-            target=weight,
-            style=MarketOrder(),
-        )
-
-    context.has_rebalanced = True
+    await context.rebalance({asset: weight for asset in context.assets})
     context.record(target_weight=weight, cash=context.portfolio.cash)
 ```
 
@@ -65,12 +59,13 @@ async def handle_data(context, data):
 | `context` | Every lifecycle function | Persistent strategy state and trading API |
 | `data` | `handle_data`, scheduled callbacks, `before_trading_start` | Current and historical data |
 | `context.portfolio` | Any time after initialization | Cash, portfolio value, positions, returns |
-| `context.account` | Any time after initialization | Account and leverage metrics |
-| `perf` | `analyze(context, perf)` | Final performance table |
+| `context.account` | Any time after initialization | Account, leverage and margin metrics |
+| `context.signals` | `handle_data`, when `compute_signals` is defined | Precomputed signals, cut to the current bar |
+| `perf` | `analyze(context, perf)` | Final performance table (pandas DataFrame) |
 
 ## Async rule of thumb
 
-Use `await` when calling functions that load data, look up assets, place orders, or cancel orders:
+Everything that touches the engine is awaited:
 
 ```python
 from ziplime.finance.execution import MarketOrder
@@ -80,31 +75,39 @@ prices = await data.history(assets=[asset], fields=["close"], bar_count=20)
 order = await context.order_target_percent(asset, 0.25, style=MarketOrder())
 ```
 
-In the current runtime:
-
-| Function | Should be async? | Notes |
+| Function | Define as | Notes |
 | --- | --- | --- |
-| `initialize(context)` | Yes | Ziplime awaits it. |
-| `handle_data(context, data)` | Yes | Ziplime awaits it on every bar. |
-| Scheduled callbacks | Yes | Ziplime awaits callbacks registered by `schedule_function`. |
-| `before_trading_start(context, data)` | No | Called synchronously. |
-| `analyze(context, perf)` | No | Called synchronously after the run. |
+| `initialize(context)` | `async def` | Awaited once before the first bar |
+| `handle_data(context, data)` | `async def` | Awaited on every bar |
+| Scheduled callbacks | `async def` | Awaited when their rule fires |
+| `before_trading_start(context, data)` | `async def` | Awaited when it is a coroutine; data reads inside it need `await` |
+| `compute_signals(context, prices)` | `def` | Plain array code over pandas frames |
+| `analyze(context, perf)` | `def` | Called synchronously after the run |
+
+<Warning>
+  A missing `await` does not raise. The strategy silently places no orders, which reads as a strategy that found no signal. `ziplime mcp`'s `check_strategy_code` flags missing awaits before a run.
+</Warning>
 
 ## API map
 
 | Task | Primary functions |
 | --- | --- |
-| Look up assets | `context.symbol`, `context.sid`, `context.future_symbol`, `context.symbols_universe` |
+| Look up assets | `context.symbol`, `context.symbols`, `context.sid`, `context.universe_symbols` |
+| Futures, options, bonds | `context.futures_chain`, `context.front_contract`, `context.futures_symbol`, `context.option_chain`, `context.bond_symbol` — see [Futures, Options & Bonds](/language/strategy-language/futures-options-bonds) |
 | Read current data | `await data.current(...)` |
-| Read trailing windows | `await data.history(...)` |
-| Place orders | `context.order`, `context.order_target`, `context.order_target_percent`, `context.order_percent`, `context.order_target_value` |
+| Read trailing windows | `await data.history(...)` with `bar_count` or `since` |
+| Rank by return | `await data.returns(...)` |
+| Point-in-time datasets | `context.huggingface_dataset`, `data_source="hf://..."` — see [Point-in-Time Datasets](/language/strategy-language/point-in-time-datasets) |
+| Place orders | `context.order`, `order_value`, `order_percent`, `order_target`, `order_target_value`, `order_target_percent` |
+| Hold a set of weights | `context.rebalance(weights)` |
 | Inspect orders | `context.get_open_orders`, `context.get_order`, `context.cancel_order` |
 | Inspect portfolio | `context.portfolio`, `context.account`, portfolio helper methods |
 | Record metrics | `context.record(...)` |
+| Gate by calendar | `context.is_week_start()`, `context.is_month_start()` |
 | Schedule callbacks | `context.schedule_function(...)`, `date_rules`, `time_rules` |
-| Configure controls | `context.set_long_only`, `context.set_max_leverage`, `context.set_max_position_size`, `context.set_max_order_size`, `context.set_max_order_count` |
+| Configure controls | `context.set_long_only`, `set_max_leverage`, `set_max_position_size`, `set_max_order_size`, `set_max_order_count`, `set_asset_restrictions` |
 | Use pipelines | `context.attach_pipeline`, `context.pipeline_output` |
-| Migrate old Zipline code | [Migrating from Classic Zipline](/language/strategy-language/zipline-migration) |
+| Vectorize indicators | `compute_signals`, `context.signals` |
 
 ## Recommended reading order
 
@@ -114,5 +117,9 @@ In the current runtime:
 4. [Orders](/language/strategy-language/orders)
 5. [Portfolio and recording](/language/strategy-language/portfolio-and-recording)
 6. [Scheduling and controls](/language/strategy-language/scheduling-and-controls)
+7. [Futures, options and bonds](/language/strategy-language/futures-options-bonds)
+8. [Point-in-time datasets](/language/strategy-language/point-in-time-datasets)
+9. [Vectorized signals](/language/strategy-language/vectorized-signals)
+10. [Venues and calendars](/language/strategy-language/venues-and-calendars)
 7. [Pipelines](/language/strategy-language/pipelines)
-8. [Migrating from Classic Zipline](/language/strategy-language/zipline-migration)
+8. [Migrating from classic Zipline](/language/strategy-language/zipline-migration)

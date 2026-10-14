@@ -61,7 +61,10 @@
             "group": "Introduction",
             "pages": [
               "language/introduction/engine-overview",
-              "language/introduction/under-the-hood"
+              "language/introduction/install-and-run",
+              "language/introduction/local-mcp",
+              "language/introduction/under-the-hood",
+              "language/introduction/whats-new"
             ]
           },
           {
